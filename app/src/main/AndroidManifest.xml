@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest package="co.tinode.tindroid"
+<manifest package="com.legitimate.AllySuperApp"
           xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT"/>
 
-    <!-- Needed for adding an avatar pic when registering new accounts and reading attachments -->
+    <!-- Needed for adding an avatar pic when registering new accounts -->
     <uses-permission android:name="android.permission.CAMERA"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <!-- Needed for saving attachments -->
+    <!-- Needed for saving and opening attachments -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
 
     <!-- Needed for contact discovery - finding users on tinode who are in user's address book -->
@@ -27,9 +27,11 @@
     <uses-permission android:name="android.permission.READ_SYNC_SETTINGS" />
     <!-- Enable sync if it's disabled -->
     <uses-permission android:name="android.permission.WRITE_SYNC_SETTINGS" />
+    <!-- declare this to show notification count in launcher icon for sonny devices -->
+    <uses-permission android:name="com.sonyericsson.home.permission.BROADCAST_BADGE" />
 
     <application
-        android:name="co.tinode.tindroid.TindroidApp"
+        android:name="com.legitimate.AllySuperApp.App"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -37,8 +39,8 @@
         android:theme="@style/AppTheme">
 
         <activity
-            android:name=".SplashActivity"
-            android:theme="@style/SplashTheme">
+            android:name="com.legitimate.AllySuperApp.SplashActivity"
+            android:theme="@style/AppTheme">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -46,13 +48,13 @@
         </activity>
 
         <activity
-            android:name=".LoginActivity"
+            android:name="com.legitimate.AllySuperApp.LoginActivity"
             android:label="@string/app_name"
             android:theme="@style/AppTheme">
         </activity>
 
         <activity
-            android:name=".ContactsActivity"
+            android:name="com.legitimate.AllySuperApp.ContactsActivity"
             android:label="@string/app_name"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/AppTheme">
@@ -62,10 +64,9 @@
         </activity>
 
         <activity
-            android:name=".MessageActivity"
+            android:name="com.legitimate.AllySuperApp.MessageActivity"
             android:label="@string/app_name"
-            android:theme="@style/AppTheme"
-            android:windowSoftInputMode="adjustResize" >
+            android:theme="@style/AppTheme" >
             <intent-filter android:icon="@mipmap/ic_launcher">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -74,12 +75,12 @@
         </activity>
 
         <activity
-            android:name=".CreateGroupActivity"
+            android:name="com.legitimate.AllySuperApp.CreateGroupActivity"
             android:label="@string/action_new_group"
             android:theme="@style/AppTheme">
         </activity>
 
-        <service android:name=".account.TinodeAccountService"
+        <service android:name="com.legitimate.AllySuperApp.account.TinodeAccountService"
             android:exported="false">
             <!-- Required filter used by the system to launch the account service. -->
             <intent-filter>
@@ -90,7 +91,7 @@
                        android:resource="@xml/authenticator" />
         </service>
 
-        <service android:name=".account.SyncService" android:exported="false">
+        <service android:name="com.legitimate.AllySuperApp.account.SyncService" android:exported="false">
             <intent-filter>
                 <action android:name="android.content.SyncAdapter" />
             </intent-filter>
@@ -105,28 +106,18 @@
 
         <!-- FCM handling -->
         <service
-            android:name=".fcm.FBaseMessagingService">
+            android:name="com.legitimate.AllySuperApp.fcm.FBaseMessagingService">
             <intent-filter>
                 <action android:name="com.google.firebase.MESSAGING_EVENT"/>
             </intent-filter>
         </service>
-
         <service
-            android:name=".fcm.FBaseInstanceIDService">
+            android:name="com.legitimate.AllySuperApp.fcm.FBaseInstanceIDService">
             <intent-filter>
                 <action android:name="com.google.firebase.INSTANCE_ID_EVENT"/>
             </intent-filter>
         </service>
 
-        <provider
-            android:name="android.support.v4.content.FileProvider"
-            android:authorities="co.tinode.tindroid.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/provider_paths"/>
-        </provider>
     </application>
 
 </manifest>

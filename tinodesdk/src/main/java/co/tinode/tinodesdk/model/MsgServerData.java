@@ -12,7 +12,7 @@ public class MsgServerData {
 
     public String id;
     public String topic;
-    public Map<String, Object> head;
+    public Map<String, String> head;
     public String from;
     public Date ts;
     public int seq;
@@ -22,7 +22,7 @@ public class MsgServerData {
     }
 
     @JsonIgnore
-    public Object getHeader(String key) {
+    public String getHeader(String key) {
         return head == null ? null : head.get(key);
     }
 }

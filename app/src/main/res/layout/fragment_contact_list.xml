@@ -6,7 +6,7 @@
     android:background="@color/white"
     android:paddingBottom="6dp"
     android:paddingTop="6dp"
-    tools:context="co.tinode.tindroid.ContactListFragment">
+    tools:context="co.tinode.AllySuperApp.com.legitimate.AllySuperApp.ContactListFragment">
 
     <!-- Use standard android.R class list id instead of app specific id. This is just useful for
          consistency. -->

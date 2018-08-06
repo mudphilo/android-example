@@ -7,6 +7,7 @@ import org.java_websocket.drafts.Draft_6455;
 import org.java_websocket.handshake.ServerHandshake;
 
 import java.io.IOException;
+import java.net.Socket;
 import java.net.SocketException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -15,6 +16,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLSession;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 
@@ -45,6 +47,7 @@ public class Connection {
         mApiKey = apikey;
 
         String path = endpoint.getPath();
+        Log.d("PATH ",path);
         if (path.equals("")) {
             path = "/";
         } else if (path.lastIndexOf("/") != path.length() - 1) {

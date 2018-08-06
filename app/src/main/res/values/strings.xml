@@ -1,22 +1,22 @@
 <resources>
-    <string name="app_name">Tindroid</string>
-    <string name="app_name_full">Tindroid Messenger</string>
-    <string name="app_version">Version 0.15</string>
-    <string name="copyright">© 2014 – 2018 Tinode</string>
-    <string name="tinode">Tinode</string>
+    <string name="app_name">Ally Super App</string>
+    <string name="app_name_full">Ally Super App Messenger</string>
+    <string name="app_version">Version 2.5</string>
+    <string name="copyright">© 2017 – 2018 Ally Super App</string>
+    <string name="tinode">My Ally</string>
 
-    <string name="login_hint">Login: alice, bob, carol, dave, eve, frank</string>
-    <string name="password_hint">Password: alice123, bob123,…</string>
+    <string name="login_hint">Phone Number</string>
+    <string name="password_hint">Password</string>
     <string name="new_message_hint">Type a message</string>
     <string name="send_message_button_hint">Send message</string>
     <string name="send_image_button_hint">Send image</string>
     <string name="send_file_button_hint">Send file</string>
 
     <string name="sign_in">Sign In</string>
-    <string name="tinode_url">https://github.com/tinode/</string>
-    <string name="app_description">Tinode Demo Chat</string>
+    <string name="tinode_url">http://allysuperapp.co.ke/</string>
+    <string name="app_description">Ally Super App</string>
     <string name="action_signup">Sign Up</string>
-    <string name="sign_up">Sign Up</string>
+    <string name="sign_up">Dont Have Account? Sign Up</string>
     <string name="login_new">Login</string>
     <string name="password_new">Password</string>
     <string name="password_repeat">Repeat password</string>
@@ -36,7 +36,7 @@
     <string name="settings_host_name_summary">Change server address</string>
     <string name="settings_use_tls_summary">Use secure connection</string>
     <string name="settings_wire_transport_summary">Select wire transport</string>
-    <string name="default_host_name">10.0.2.2:6060</string>
+    <string name="default_host_name">http://ally-messenger.com:6060</string>
 
     <!-- access mode definitions -->
     <string name="modeReadable">can join</string>
@@ -93,16 +93,20 @@
      alphabet using ListView fast scroll. -->
     <string name="alphabet">ABCDEFGHIJKLMNOPQRSTUVWXYZ</string>
 
+    <string name="create_account">Create New Account</string>
+    <string name="loading_text">Loading</string>
+    <string name="submit_validation">Validate</string>
+
     <string name="search_hint">Find contacts</string>
     <string name="contacts_permission_denied">Contacts not loaded: permission denied</string>
     <string name="account_already_exists">Account already exists</string>
     <string name="pick_account">Pick Account</string>
-    <string name="tinode_invite_subject">Check out Tindroid Messenger</string>
-    <string name="tinode_invite_body">Check out Tindroid Messenger. Download it from https://github.com/tinode/</string>
+    <string name="tinode_invite_subject">Check out Ally Super App</string>
+    <string name="tinode_invite_body">Check out Ally Super App Messenger. Download it from https://play.google.com/store/apps/details?id=com.legitimate.AllySuperApp</string>
 
-    <string name="profile_action">Tinode profile</string>
+    <string name="profile_action">Ally profile</string>
     <string name="view_profile">View Profile</string>
-    <string name="tinode_message">Send Tinode message</string>
+    <string name="tinode_message">Send Ally message</string>
     <string name="failed_to_invite">Don\'t know how to invite - no contact info</string>
     <string name="about_title">About</string>
     <string name="failed_to_send_message">Failed to send message</string>
@@ -119,6 +123,7 @@
     <string name="address">Address</string>
     <string name="topic_muted">Muted</string>
     <string name="permissions">Permissions</string>
+    <string name="permissions_list">Permissions: %1$s</string>
     <string name="close">Close</string>
 
     <string name="invitation_text">Join my group!</string>
@@ -182,7 +187,7 @@
     <string name="tel">Phone</string>
     <string name="email_required">Email required</string>
     <string name="tel_required">Phone number required</string>
-    <string name="validate_cred">Enter confirmation code sent to you by %1$s:</string>
+    <string name="validate_cred">Enter confirmation code sent to you by phone</string>
     <string name="confirm">Confirm</string>
     <string name="validation_example">E.g. 123456</string>
     <string name="enter_confirmation_code">Enter confirmation code</string>
@@ -191,11 +196,4 @@
     <string name="failed_empty_id">ID is required</string>
     <string name="topic_not_found_or_invalid">Topic not found or invalid</string>
     <string name="sending_disabled">Not available</string>
-    <string name="failed_to_download">Failed to save downloaded file</string>
-    <string name="failed_to_open_file">No application can view the file of this type</string>
-    <string name="download_title">Tindroid download</string>
-    <string name="some_permissions_missing">Some permissions missing.</string>
-    <string name="invalid_file">Unable to attach this file</string>
-    <string name="cancelled">cancelled</string>
-    <string name="yourPermissions">Yours</string>
 </resources>
