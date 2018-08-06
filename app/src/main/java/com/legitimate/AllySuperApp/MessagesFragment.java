@@ -78,8 +78,8 @@ public class MessagesFragment extends Fragment
 
     // Maximum size of file to send in-band. 256KB.
     private static final long MAX_INBAND_ATTACHMENT_SIZE = 1 << 17;
-    // Maximum size of file to upload. 8MB.
-    private static final long MAX_ATTACHMENT_SIZE = 1 << 23;
+    // Maximum size of file to upload. 800MB.
+    private static final long MAX_ATTACHMENT_SIZE = 100 << 23;
 
     private static final int READ_DELAY = 1000;
     protected ComTopic<VxCard> mTopic;
