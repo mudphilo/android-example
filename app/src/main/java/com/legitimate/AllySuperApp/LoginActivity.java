@@ -24,6 +24,9 @@ import android.widget.Button;
 import android.widget.Toast;
 
 import com.legitimate.AllySuperApp.R;
+
+import java.util.ArrayList;
+
 import co.tinode.tinodesdk.Tinode;
 
 /**
@@ -51,6 +54,7 @@ public class LoginActivity extends AppCompatActivity {
 
     private static final String TAG = "LoginActivity";
     private static final int PERMISSIONS_REQUEST_GET_ACCOUNTS = 100;
+    private static final int PERMISSIONS_REQUEST_ID = 100;
 
     public static final String EXTRA_CONFIRM_CREDENTIALS = "confirmCredentials";
     public static final String EXTRA_ADDING_ACCOUNT = "addNewAccount";
@@ -121,10 +125,9 @@ public class LoginActivity extends AppCompatActivity {
             args.putString("credential", cred);
             showFragment(FRAGMENT_CREDENTIALS, args);
         }
-        // Request permission to access accounts. We need access to acccounts to store the login token.
-        if (!UiUtils.checkPermission(this, Manifest.permission.GET_ACCOUNTS)) {
-            requestAccountAccessPermission();
-        }
+
+        // Check and possibly request runtime permissions.
+        requestPermissions();
     }
 
     @Override
@@ -136,34 +139,6 @@ public class LoginActivity extends AppCompatActivity {
     @Override
     public void onPause() {
         super.onPause();
-    }
-
-    // Run-time check for permission to GET_ACCOUNTS
-    private void requestAccountAccessPermission() {
-            // Result will be returned in onRequestPermissionsResult
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.GET_ACCOUNTS},
-                    PERMISSIONS_REQUEST_GET_ACCOUNTS);
-        }
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    @Override
-    public void onRequestPermissionsResult(final int requestCode, @NonNull final String[] permissions,
-                                           @NonNull final int[] grantResults) {
-        //
-        if (requestCode == PERMISSIONS_REQUEST_GET_ACCOUNTS) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                // Permission is granted
-                Log.d(TAG, "Access granted");
-            } else {
-                // Permission denied, so we won't be able to save login token
-
-                Log.d(TAG, "Access denied");
-            }
-        }
     }
 
 
@@ -287,4 +262,46 @@ public class LoginActivity extends AppCompatActivity {
         }
         super.finish();
     }
+
+    // Run-time check for permissions.	    // Run-time check for permission to GET_ACCOUNTS
+    private void requestPermissions() {
+        // Check the SDK version and whether the permission is already granted or not.	            // Result will be returned in onRequestPermissionsResult
+        // Result will be returned in onRequestPermissionsResult
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {	        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            ArrayList<String> permissions = new ArrayList<>();	            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.GET_ACCOUNTS},
+                    PERMISSIONS_REQUEST_GET_ACCOUNTS);
+            if (!UiUtils.checkPermission(this, Manifest.permission.GET_ACCOUNTS)) {
+                permissions.add(Manifest.permission.GET_ACCOUNTS);
+            }
+            if (!UiUtils.checkPermission(this, Manifest.permission.READ_CONTACTS)) {
+                permissions.add(Manifest.permission.READ_CONTACTS);
+            }
+            if (!UiUtils.checkPermission(this, Manifest.permission.WRITE_CONTACTS)) {
+                permissions.add(Manifest.permission.WRITE_CONTACTS);
+            }
+            ActivityCompat.requestPermissions(this,
+                    permissions.toArray(new String[]{}), PERMISSIONS_REQUEST_ID);
+        }	        }
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public void onRequestPermissionsResult(final int requestCode, @NonNull final String[] permissions,
+                                           @NonNull final int[] grantResults) {
+        //
+        if (requestCode == PERMISSIONS_REQUEST_ID) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                // Permission is granted
+                Log.d(TAG, "Access granted");
+            } else {
+                // Permission denied, so we won't be able to save login token
+                Toast.makeText(this, R.string.some_permissions_missing, Toast.LENGTH_SHORT).show();
+                Log.e(TAG, "Access denied");
+            }
+        }
+    }
+
+
 }

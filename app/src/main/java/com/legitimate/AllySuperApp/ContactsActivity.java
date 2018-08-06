@@ -23,15 +23,16 @@ import co.tinode.tinodesdk.model.PrivateType;
 import co.tinode.tinodesdk.model.Subscription;
 
 /**
- * Activity holds the following fragments:
- *   ContactsFragment
- *     ChatListFragment
- *     ContactListFragment
- *
- *   AccountInfoFragment
- *
- * This activity owns 'me' topic.
- */
+* Activity holds the following fragments:
+*   ContactsFragment
+*     ChatListFragment
+*     ContactListFragment
+*
+*   AccountInfoFragment
+*
+* This activity owns 'me' topic.
+*/
+
 public class ContactsActivity extends AppCompatActivity implements
         ContactListFragment.OnContactsInteractionListener {
 
@@ -164,12 +165,13 @@ public class ContactsActivity extends AppCompatActivity implements
         return true;
     }
 
+    /*
     @Override
     public void onWindowFocusChanged(boolean focus) {
         super.onWindowFocusChanged(focus);
-
         Cache.activityVisible(focus);
     }
+    */
 
     private class MeListener extends MeTopic.MeListener<VxCard> {
 

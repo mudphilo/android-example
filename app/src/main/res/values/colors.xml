@@ -100,5 +100,6 @@
     <color name="letter_tile_text_color_dark">#dedede</color>
 
     <color name="text_body">#FFBF00</color>
+    <color name="colorGray">#cccccc</color>
 
 </resources>

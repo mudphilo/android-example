@@ -1,14 +1,20 @@
 package com.legitimate.AllySuperApp;
 
+import android.app.DownloadManager;
 import android.app.NotificationManager;
+import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Environment;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentManager;
 import android.support.v4.app.FragmentTransaction;
+import android.support.v4.content.FileProvider;
 import android.support.v7.app.ActionBar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.widget.Toolbar;
@@ -18,7 +24,15 @@ import android.view.MenuItem;
 import android.view.View;
 import android.widget.Toast;
 
+import java.io.File;
+import java.net.URI;
+import java.util.Map;
 import java.util.Timer;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.ReentrantLock;
 
 import com.legitimate.AllySuperApp.R;
 import com.legitimate.AllySuperApp.account.Utils;
@@ -60,6 +74,9 @@ public class MessageActivity extends AppCompatActivity {
 
     private PausableSingleThreadExecutor mMessageSender = null;
 
+    private DownloadManager mDownloadMgr = null;
+    private long mDownloadId = -1;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -86,6 +103,10 @@ public class MessageActivity extends AppCompatActivity {
                 }
             }
         });
+
+        mDownloadMgr = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
+        registerReceiver(onComplete, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        registerReceiver(onNotificationClick, new IntentFilter(DownloadManager.ACTION_NOTIFICATION_CLICKED));
 
         mMessageSender = new PausableSingleThreadExecutor();
         mMessageSender.pause();
@@ -123,8 +144,6 @@ public class MessageActivity extends AppCompatActivity {
             Log.e(TAG, "Activity resumed with an empty topic name");
             finish();
             return;
-        } else {
-            Log.d(TAG, "Activity resumed with topic=" + mTopicName);
         }
 
         // Cancel all pending notifications addressed to the current topic
@@ -170,12 +189,12 @@ public class MessageActivity extends AppCompatActivity {
                             }
                         });
                         mMessageSender.resume();
-                        // Submit unsent messages for processing.
+                        // Submit pending messages for processing: publish queued, delete marked for deletion.
                         mMessageSender.submit(new Runnable() {
                             @Override
                             public void run() {
                                 try {
-                                    mTopic.publishPending();
+                                    mTopic.syncAll();
                                 } catch (Exception ignored) {
                                 }
                             }
@@ -198,15 +217,12 @@ public class MessageActivity extends AppCompatActivity {
         } else {
             MessagesFragment fragmsg = (MessagesFragment) getSupportFragmentManager()
                     .findFragmentByTag(FRAGMENT_MESSAGES);
-
-            if(fragmsg != null)
-                fragmsg.topicSubscribed();
+            fragmsg.topicSubscribed();
         }
     }
 
     @Override
     public void onPause() {
-        Log.d(TAG, "onPause");
         super.onPause();
         mMessageSender.pause();
         if (mTypingAnimationTimer != null) {
@@ -234,6 +250,8 @@ public class MessageActivity extends AppCompatActivity {
         super.onDestroy();
 
         mMessageSender.shutdownNow();
+        unregisterReceiver(onComplete);
+        unregisterReceiver(onNotificationClick);
     }
 
     @Override
@@ -330,6 +348,64 @@ public class MessageActivity extends AppCompatActivity {
         mMessageSender.submit(runnable);
     }
 
+    public void startDownload(Uri uri, String fname, String mime, Map<String,String> headers) {
+        Environment
+                .getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                .mkdirs();
+
+        DownloadManager.Request req = new DownloadManager.Request(uri);
+        if (headers != null) {
+            for (Map.Entry<String,String> entry : headers.entrySet()) {
+                req.addRequestHeader(entry.getKey(), entry.getValue());
+            }
+        }
+
+        mDownloadId = mDownloadMgr.enqueue(
+                req.setAllowedNetworkTypes(DownloadManager.Request.NETWORK_WIFI |
+                        DownloadManager.Request.NETWORK_MOBILE)
+                        .setMimeType(mime)
+                        .setAllowedOverRoaming(false)
+                        .setTitle(fname)
+                        .setDescription(getString(R.string.download_title))
+                        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                        .setVisibleInDownloadsUi(true)
+                        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fname));
+    }
+
+    BroadcastReceiver onComplete=new BroadcastReceiver() {
+        public void onReceive(Context ctx, Intent intent) {
+            if (DownloadManager.ACTION_DOWNLOAD_COMPLETE.equals(intent.getAction()) &&
+                    intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, 0) == mDownloadId) {
+                DownloadManager.Query query = new DownloadManager.Query();
+                query.setFilterById(mDownloadId);
+                Cursor c = mDownloadMgr.query(query);
+                if (c.moveToFirst()) {
+                    if (DownloadManager.STATUS_SUCCESSFUL == c.getInt(c.getColumnIndex(DownloadManager.COLUMN_STATUS))) {
+                        URI fileUri = URI.create(c.getString(c.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI)));
+                        String mimeType = c.getString(c.getColumnIndex(DownloadManager.COLUMN_MEDIA_TYPE));
+                        intent = new Intent();
+                        intent.setAction(android.content.Intent.ACTION_VIEW);
+                        intent.setDataAndType(FileProvider.getUriForFile(MessageActivity.this,
+                                "com.legitimate.AllySuperApp.provider", new File(fileUri)), mimeType);
+                        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        try {
+                            startActivity(intent);
+                        } catch (ActivityNotFoundException ignored) {
+                            startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS));
+                        }
+                    }
+                }
+                c.close();
+            }
+        }
+    };
+
+    BroadcastReceiver onNotificationClick=new BroadcastReceiver() {
+        public void onReceive(Context ctxt, Intent intent) {
+            Log.d(TAG, "onNotificationClick" + intent.getExtras());
+        }
+    };
+
     private class TListener extends ComTopic.ComListener<VxCard> {
 
         TListener() {
@@ -339,21 +415,14 @@ public class MessageActivity extends AppCompatActivity {
         public void onSubscribe(int code, String text) {
             // Topic name may change after subscription, i.e. new -> grpXXX
             mTopicName = mTopic.getName();
-            /*
-            MessagesFragment fragment = (MessagesFragment) getSupportFragmentManager().
-                    findFragmentByTag(FRAGMENT_MESSAGES);
-            if (fragment != null && fragment.isVisible()) {
-                fragment.runLoader();
-            }
-            */
         }
 
         @Override
         public void onData(MsgServerData data) {
-            MessagesFragment fragment = (MessagesFragment) getSupportFragmentManager().
+            final MessagesFragment fragment = (MessagesFragment) getSupportFragmentManager().
                     findFragmentByTag(FRAGMENT_MESSAGES);
             if (fragment != null && fragment.isVisible()) {
-                fragment.runLoader();
+                fragment.runMessagesLoader();
             }
         }
 
@@ -441,4 +510,51 @@ public class MessageActivity extends AppCompatActivity {
 
         }
     }
+
+    /**
+     * Utility class to send messages queued while offline.
+     * The execution is paused while the activity is in background and unpaused
+     * when the topic subscription is live.
+     */
+    private static class PausableSingleThreadExecutor extends ThreadPoolExecutor {
+        private boolean isPaused;
+        private ReentrantLock pauseLock = new ReentrantLock();
+        private Condition unpaused = pauseLock.newCondition();
+
+        public PausableSingleThreadExecutor() {
+            super(1, 1, 0L, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<Runnable>());
+        }
+
+        protected void beforeExecute(Thread t, Runnable r) {
+            super.beforeExecute(t, r);
+            pauseLock.lock();
+            try {
+                while (isPaused) unpaused.await();
+            } catch (InterruptedException ie) {
+                t.interrupt();
+            } finally {
+                pauseLock.unlock();
+            }
+        }
+
+        public void pause() {
+            pauseLock.lock();
+            try {
+                isPaused = true;
+            } finally {
+                pauseLock.unlock();
+            }
+        }
+
+        public void resume() {
+            pauseLock.lock();
+            try {
+                isPaused = false;
+                unpaused.signalAll();
+            } finally {
+                pauseLock.unlock();
+            }
+        }
+    }
+
 }

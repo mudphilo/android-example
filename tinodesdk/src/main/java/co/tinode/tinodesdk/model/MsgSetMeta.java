@@ -10,8 +10,7 @@ public class MsgSetMeta<Pu,Pr> {
 
     public MetaSetDesc<Pu,Pr> desc;
     public MetaSetSub sub;
-    private int BATCH_SIZE = 50;
-    public String [] tags = new String[BATCH_SIZE];
+    public String[] tags;
 
     public MsgSetMeta() {}
 

@@ -22,17 +22,18 @@ public class Cache {
     public static final String HOST_NAME = "allysuperapp.co.ke:6060"; // local host
     public static final boolean PREFS_USE_TLS = false;
     private static final String API_KEY = "AQEAAAABAAD_rAp4DJh05a1HAwFT3A6K";
-
     private static Tinode sTinode;
 
     private static int sVisibleCount = 0;
+
+    private static int sUniqueCounter = 100;
 
     public static Tinode getTinode() {
         if (sTinode == null) {
             Log.d(TAG, "Tinode instantiated");
 
             sTinode = new Tinode("Tindroid/0.15", API_KEY, BaseDb.getInstance().getStore(), null);
-            sTinode.setOsString(Build.VERSION.RELEASE + " Application Version " +BuildConfig.VERSION_NAME +" Build Type "+ BuildConfig.BUILD_TYPE);
+            sTinode.setOsString(Build.VERSION.RELEASE + " v-" +BuildConfig.VERSION_NAME);
 
             // Default types for parsing Public, Private fields of messages
             sTinode.setDefaultTypeOfMetaPacket(VxCard.class, PrivateType.class);
@@ -42,13 +43,16 @@ public class Cache {
             // Set device language
             sTinode.setLanguage(Locale.getDefault().getLanguage());
             sTinode.setAutologin(true);
+
+            // Keep in app to prevent garbage collection.
+            App.retainTinodeCache(sTinode);
         }
 
         sTinode.setDeviceToken(FirebaseInstanceId.getInstance().getToken());
         return sTinode;
     }
 
-    // Invalidate and reinitialize existing cache.
+    // Invalidate existing cache.
     public static void invalidate() {
         if (sTinode != null) {
             sTinode.logout();
@@ -62,9 +66,13 @@ public class Cache {
      * @param visible true if some activity became visible
      * @return
      */
-    public static int activityVisible(boolean visible) {
+    public static int activityVisible_REMOVE(boolean visible) {
         sVisibleCount += visible ? 1 : -1;
         // Log.d(TAG, "Visible count: " + sVisibleCount);
         return sVisibleCount;
+    }
+
+    public static int getUniqueCounter() {
+        return ++sUniqueCounter;
     }
 }

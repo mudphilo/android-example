@@ -31,6 +31,7 @@ import android.os.Bundle;
 import android.provider.ContactsContract.Contacts;
 import android.support.annotation.NonNull;
 import android.support.v4.app.DialogFragment;
+import android.support.v4.app.FragmentActivity;
 import android.support.v4.app.ListFragment;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.CursorLoader;
@@ -146,19 +147,20 @@ public class ContactListFragment extends ListFragment {
         mContactsLoaderCallback = new ContactsLoaderCallback();
         mPhEmImLoaderCallback = new PhEmImLoaderCallback();
 
+        FragmentActivity activity = getActivity();
+        if (activity == null) {
+            return;
+        }
+
         /*
          * An ImageLoader object loads and resizes an image in the background and binds it to the
-         * QuickContactBadge in each item layout of the ListView. ImageLoader implements memory
-         * caching for each image, which substantially improves refreshes of the ListView as the
-         * user scrolls through it.
-         *
-         * To learn more about downloading images asynchronously and caching the results, read the
-         * Android training class Displaying Bitmaps Efficiently.
+         * each item layout of the ListView. ImageLoader implements memory caching for each image,
+         * which substantially improves refreshes of the ListView as the user scrolls through it.
          *
          * http://developer.android.com/training/displaying-bitmaps/
          */
-        mImageLoader = new ImageLoader(getActivity(), UiUtils.getListPreferredItemHeight(this),
-                getActivity().getSupportFragmentManager()) {
+        mImageLoader = new ImageLoader(activity, UiUtils.getListPreferredItemHeight(this),
+                activity.getSupportFragmentManager()) {
             @Override
             protected Bitmap processBitmap(Object data) {
                 // This gets called in a background thread and passed the data from
@@ -174,7 +176,12 @@ public class ContactListFragment extends ListFragment {
             @Override
             public void onChange(boolean selfChange) {
                 // Content changed, refresh data
-                getLoaderManager().initLoader(ContactsQuery.PHEMIM_QUERY_ID, null, mPhEmImLoaderCallback);
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        getLoaderManager().initLoader(ContactsQuery.PHEMIM_QUERY_ID, null, mPhEmImLoaderCallback);
+                    }
+                });
             }
         };
     }
@@ -913,4 +920,3 @@ public class ContactListFragment extends ListFragment {
         }
     }
 }
-

@@ -30,6 +30,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -84,7 +85,7 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
     protected String[] mTags;
 
     // The topic is subscribed/online.
-    private boolean mAttached = false;
+    protected boolean mAttached = false;
 
     protected Listener<DP,DR,SP,SR> mListener = null;
 
@@ -281,7 +282,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
 
 
         // This is an update to someone else's subscription to topic (given)
-
         Subscription<SP,SR> s = mSubs.get(user);
         if (s == null) {
             s = new Subscription<>();
@@ -629,7 +629,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotConnectedException if there is no connection to server
      */
     public PromisedReply<ServerMessage> leave(final boolean unsub) throws Exception {
-
         if (mAttached) {
             return mTinode.leave(getName(), unsub).thenApply(
                     new PromisedReply.SuccessListener<ServerMessage>() {
@@ -689,13 +688,11 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotConnectedException if there is no connection to server
      */
     public PromisedReply<ServerMessage> publish(Drafty content) throws Exception {
-
         final long id;
         if (mStore != null) {
             id = mStore.msgSend(this, content);
         } else {
             id = -1;
-            Log.d(TAG,"mStore is null ");
         }
 
         if (mAttached) {
@@ -713,11 +710,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
             throw new NotSubscribedException();
         }
 
-        //@fixme store offline messages for sending later
-        // try to relogin again
-
-
-
         throw new NotConnectedException();
     }
 
@@ -729,41 +721,124 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
     public PromisedReply<ServerMessage> publish(String content) throws Exception {
         return publish(Drafty.parse(content));
     }
+
     /**
-     * Re-send pending messages. Processing will stop on the first error.
+     * Re-send pending messages, delete messages marked for deletion.
+     * Processing will stop on the first error.
      *
-     * @return {@link PromisedReply} of the last sent message.
+     * @return {@link PromisedReply} of the last sent command.
      *
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException if there is no connection to server
      */
     @SuppressWarnings("UnusedReturnValue")
-    public <ML extends Iterator<Storage.Message> & Closeable> PromisedReply<ServerMessage> publishPending()
+    public <ML extends Iterator<Storage.Message> & Closeable> PromisedReply<ServerMessage> syncAll()
             throws Exception {
-        ML list = mStore.getUnsentMessages(this);
-        if (list == null) {
-            return new PromisedReply<>((ServerMessage) null);
+        PromisedReply<ServerMessage> last = new PromisedReply<>((ServerMessage) null);
+        if (mStore == null) {
+            return last;
         }
 
-        PromisedReply<ServerMessage> last = new PromisedReply<>((ServerMessage) null);
-        while (list.hasNext()) {
-            final Storage.Message msg = list.next();
-            last = mTinode.publish(getName(), msg.getContent());
-            last.thenApply(
-                    new PromisedReply.SuccessListener<ServerMessage>() {
-                        @Override
-                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
-                            processDelivery(result.ctrl, msg.getId());
-                            return null;
-                        }
-                    }, null);
+        // Get soft-deleted message IDs.
+        final List<Integer> toSoftDelete = mStore.getQueuedMessageDeletes(this, false);
+        if (toSoftDelete != null) {
+            last = mTinode.delMessage(getName(), toSoftDelete, true)
+                    .thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
+                @Override
+                public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                        Integer delId = result.ctrl.getIntParam("del");
+                        mStore.msgDelete(Topic.this, delId, toSoftDelete);
+                        return null;
+                }
+            }, null);
+        }
+
+        // Get hard-deleted message IDs.
+        final List<Integer> toHardDelete = mStore.getQueuedMessageDeletes(this, true);
+        if (toHardDelete != null) {
+            last = mTinode.delMessage(getName(), toHardDelete, true)
+                    .thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
+                @Override
+                public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                        Integer delId = result.ctrl.getIntParam("del");
+                        mStore.msgDelete(Topic.this, delId, toHardDelete);
+                        return null;
+                }
+            }, null);
+        }
+
+        ML toSend = mStore.getQueuedMessages(this);
+        if (toSend == null) {
+            return last;
         }
 
         try {
-            list.close();
-        } catch (IOException ignored) {}
+            while (toSend.hasNext()) {
+                Storage.Message msg = toSend.next();
+                final long msgId = msg.getId();
+                last = mTinode.publish(getName(), msg.getContent())
+                        .thenApply(
+                            new PromisedReply.SuccessListener<ServerMessage>() {
+                                @Override
+                                public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                                    Log.d(TAG, "Processing delivery msgId="+ msgId);
+                                    processDelivery(result.ctrl, msgId);
+                                    return null;
+                                }
+                            }, null);
+            }
+        } finally {
+            try {
+                toSend.close();
+            } catch (IOException ignored) {}
+        }
 
         return last;
+    }
+
+    /**
+     * Try to sync one message.
+     *
+     * @return {@link PromisedReply} resolved on result of the operation.
+     *
+     * @throws NotSubscribedException if the client is not subscribed to the topic
+     * @throws NotConnectedException if there is no connection to server
+     */
+    public PromisedReply<ServerMessage> syncOne(long msgDatabaseId) {
+        PromisedReply<ServerMessage> result = new PromisedReply<>((ServerMessage) null);
+        if (mStore == null) {
+            return result;
+        }
+
+        final Storage.Message m = mStore.getMessageById(this, msgDatabaseId);
+        if (m != null) {
+            try {
+                if (m.isDeleted()) {
+                    result = mTinode.delMessage(getName(), m.getSeqId(), m.isDeleted(true))
+                            .thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
+                                @Override
+                                public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                                    Integer delId = result.ctrl.getIntParam("del");
+                                    mStore.msgDelete(Topic.this, delId, m.getSeqId(), m.getSeqId() + 1);
+                                    return null;
+                                }
+                            }, null);
+                } else if (m.isReady()) {
+                    result = mTinode.publish(getName(), m.getContent())
+                            .thenApply(
+                                    new PromisedReply.SuccessListener<ServerMessage>() {
+                                        @Override
+                                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                                            Log.d(TAG, "Processing delivery msgId=" + m.getId());
+                                            processDelivery(result.ctrl, m.getId());
+                                            return null;
+                                        }
+                                    }, null);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        return result;
     }
 
     /**
@@ -780,7 +855,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotConnectedException if there is no connection to the server
      */
     public PromisedReply<ServerMessage> setMeta(final MsgSetMeta<DP,DR> meta) throws Exception {
-
         if (mAttached) {
             return mTinode.setMeta(getName(), meta).thenApply(
                 new PromisedReply.SuccessListener<ServerMessage>() {
@@ -792,7 +866,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
             }, null);
         }
         if (mTinode.isConnected()) {
-
             throw new NotSubscribedException();
         }
 
@@ -905,7 +978,7 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotSynchronizedException if the topic has not yet been synchronized with the server
      */
     @SuppressWarnings("unchecked")
-    public PromisedReply<ServerMessage> invite(String uid, String mode)  throws Exception {
+    public PromisedReply<ServerMessage> invite(String uid, String mode) throws Exception {
 
         final Subscription<SP,SR> sub;
         if (getSubscription(uid) != null) {
@@ -1014,9 +1087,8 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotConnectedException if there is no connection to the server
      */
     public PromisedReply<ServerMessage> delMessages(final int fromId, final int toId, final boolean hard) throws Exception {
-
         if (mStore != null) {
-            mStore.msgMarkToDelete(this, fromId, toId);
+            mStore.msgMarkToDelete(this, fromId, toId, hard);
         }
         if (mAttached) {
             return mTinode.delMessage(getName(), fromId, toId, hard).thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
@@ -1047,11 +1119,11 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotSubscribedException if the client is not subscribed to the topic
      * @throws NotConnectedException if there is no connection to the server
      */
-    public PromisedReply<ServerMessage> delMessages(final int[] list, final boolean hard) throws Exception {
-
+    public PromisedReply<ServerMessage> delMessages(final List<Integer> list, final boolean hard) throws Exception {
         if (mStore != null) {
-            mStore.msgMarkToDelete(this, list);
+            mStore.msgMarkToDelete(this, list, hard);
         }
+
         if (mAttached) {
             return mTinode.delMessage(getName(), list, hard).thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
                 @Override
@@ -1079,7 +1151,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
      * @throws NotConnectedException if there is no connection to the server
      */
     public PromisedReply<ServerMessage> delete() throws Exception {
-
         if (!mTinode.isConnected()) {
             throw new NotConnectedException();
         }
@@ -1299,6 +1370,22 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
         return getTopicTypeByName(mName);
     }
 
+    public boolean isMeType() {
+        return getTopicType() == TopicType.ME;
+    }
+
+    public boolean isP2PType() {
+        return getTopicType() == TopicType.P2P;
+    }
+
+    public boolean isFndType() {
+        return getTopicType() == TopicType.FND;
+    }
+
+    public boolean isGrpType() {
+        return getTopicType() == TopicType.GRP;
+    }
+
     public static boolean getIsNewByName(String name) {
         return name.startsWith(Tinode.TOPIC_NEW);  // "newRANDOM" when the topic was locally initialized but not yet
                                                     // synced with the server
@@ -1428,6 +1515,7 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
         }
     }
 
+
     protected void routeData(MsgServerData data) {
         if (mStore != null) {
             if (mStore.msgReceived(this, getSubscription(data.from), data) > 0) {
@@ -1486,59 +1574,6 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
         if (mListener != null) {
             mListener.onInfo(info);
         }
-    }
-
-    // custom
-    /**
-     * Update topic metadata
-     *
-     * @throws NotSubscribedException if the client is not subscribed to the topic
-     * @throws NotConnectedException if there is no connection to the server
-     */
-    public PromisedReply<ServerMessage> searchContact(final MsgSetMeta<DP,DR> meta) throws Exception {
-
-        if (this.mAttached) {
-            return mTinode.setMeta(getName(), meta).thenApply(
-                    new PromisedReply.SuccessListener<ServerMessage>() {
-                        @Override
-                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result)
-                                throws Exception {
-                            update(result.ctrl, meta);
-                            return null;
-                        }
-                    }, null);
-        }
-        if (mTinode.isConnected()) {
-            throw new NotSubscribedException();
-        }
-
-        throw new NotConnectedException();
-    }
-
-    /**
-     * Update topic metadata
-     *
-     * @throws NotSubscribedException if the client is not subscribed to the topic
-     * @throws NotConnectedException if there is no connection to the server
-     */
-    public PromisedReply<ServerMessage> getContact(final MsgGetMeta meta) throws Exception {
-
-        if (mAttached) {
-            return mTinode.getMeta(getName(), meta).thenApply(
-                    new PromisedReply.SuccessListener<ServerMessage>() {
-                        @Override
-                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result)
-                                throws Exception {
-                            //update(result.ctrl, meta);
-                            return null;
-                        }
-                    }, null);
-        }
-        if (mTinode.isConnected()) {
-            throw new NotSubscribedException();
-        }
-
-        throw new NotConnectedException();
     }
 
     @Override
@@ -1684,6 +1719,32 @@ public class Topic<DP,DR,SP,SR> implements LocalData {
         public MsgGetMeta build() {
             return meta;
         }
+    }
 
+    // custom
+    /**
+     * Update topic metadata
+     *
+     * @throws NotSubscribedException if the client is not subscribed to the topic
+     * @throws NotConnectedException if there is no connection to the server
+     */
+    public PromisedReply<ServerMessage> searchContact(final MsgSetMeta<DP,DR> meta) throws Exception {
+
+        if (this.mAttached) {
+            return mTinode.setMeta(getName(), meta).thenApply(
+                    new PromisedReply.SuccessListener<ServerMessage>() {
+                        @Override
+                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result)
+                                throws Exception {
+                            update(result.ctrl, meta);
+                            return null;
+                        }
+                    }, null);
+        }
+        if (mTinode.isConnected()) {
+            throw new NotSubscribedException();
+        }
+
+        throw new NotConnectedException();
     }
 }

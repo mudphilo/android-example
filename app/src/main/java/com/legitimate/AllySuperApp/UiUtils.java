@@ -88,6 +88,12 @@ import co.tinode.tinodesdk.model.Acs;
 import co.tinode.tinodesdk.model.PrivateType;
 import co.tinode.tinodesdk.model.ServerMessage;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.FileInputStream;
+
+
 /**
  * Static utilities for UI support.
  */
@@ -105,7 +111,8 @@ public class UiUtils {
     static final int COLOR_MESSAGE_BUBBLE = 0xffc5e1a5;
     static final int COLOR_META_BUBBLE = 0xFFCFD8DC;
     private static final String TAG = "UiUtils";
-    private static final int BITMAP_SIZE = 128;
+    private static final int AVATAR_SIZE = 128;
+    private static final int MAX_BITMAP_SIZE = 1024;
     // Material colors, shade #200.
     // TODO(gene): maybe move to resource file
     private static final Colorizer[] sColorizer = {
@@ -150,15 +157,6 @@ public class UiUtils {
         if (toolbar == null) {
             return;
         }
-    /*
-        Menu menu = toolbar.getMenu();
-        for (int i = 0; i < menu.size(); i++) {
-            Log.d(TAG, "Hiding menu item");
-            MenuItem mi = menu.getItem(i);
-            mi.setVisible(false);
-            mi.setEnabled(false);
-        }
-    */
 
         activity.runOnUiThread(new Runnable() {
             @Override
@@ -292,76 +290,6 @@ public class UiUtils {
 
     static void loginWithSavedAccount(final Activity activity,
                                       final AccountManager accountManager,
-                                      final Account account,int reload) {
-        accountManager.getAuthToken(account, Utils.TOKEN_TYPE, null, false, new AccountManagerCallback<Bundle>() {
-            @Override
-            public void run(AccountManagerFuture<Bundle> future) {
-                Bundle result = null;
-                try {
-                    result = future.getResult(); // This blocks until the future is ready.
-                } catch (OperationCanceledException e) {
-                    Log.i(TAG, "Get Existing Account canceled.");
-                } catch (AuthenticatorException e) {
-                    Log.e(TAG, "AuthenticatorException: ", e);
-                } catch (IOException e) {
-                    Log.e(TAG, "IOException: ", e);
-                }
-
-                Intent launch = new Intent(activity, LoginActivity.class);
-                if (result != null) {
-                    final String token = result.getString(AccountManager.KEY_AUTHTOKEN);
-                    if (!TextUtils.isEmpty(token)) {
-                        final SharedPreferences sharedPref
-                                = PreferenceManager.getDefaultSharedPreferences(activity);
-                        String hostName = Cache.HOST_NAME;
-                        boolean tls = Cache.PREFS_USE_TLS;
-                        try {
-                            // Connecting with synchronous calls because this is not the UI thread.
-                            final Tinode tinode = Cache.getTinode();
-                            tinode.connect(hostName, tls).getResult();
-                            ServerMessage msg = tinode.loginToken(token).getResult();
-                            // Logged in successfully. Save refreshed token for future use.
-                            accountManager.setAuthToken(account, Utils.TOKEN_TYPE, tinode.getAuthToken());
-                            if (msg.ctrl.code < 300) {
-                                // Logged in successfully. Save refreshed token for future use.
-                                Log.d(TAG, "LoginWithSavedAccount succeeded, sending to contacts");
-                                // Go to Contacts
-                                launch = new Intent(activity, ContactsActivity.class);
-                            } else {
-                                Log.d(TAG, "LoginWithSavedAccount failed due to credentials, sending to login");
-                                Object obj = null;
-                                String method = "email";
-                                if (msg.ctrl.params != null && (obj = msg.ctrl.params.get("cred")) != null &&
-                                        (Collection.class.isInstance(obj))) {
-                                    Iterator it = ((Collection) obj).iterator();
-                                    if (it.hasNext()) {
-                                        Object m = it.next();
-                                        if (m instanceof String) {
-                                            method = (String) m;
-                                        }
-                                    }
-                                }
-                                launch.putExtra("credential", method);
-                            }
-                        } catch (IOException ignored) {
-                            // Login failed due to network error.
-                            // If we have UID, go to Contacts, otherwise to Login
-                            launch = new Intent(activity, BaseDb.getInstance().isReady() ?
-                                    ContactsActivity.class : LoginActivity.class);
-                            Log.d(TAG, "Network failure/" + (BaseDb.getInstance().isReady() ? "DB ready" : "DB NOT ready"));
-                        } catch (Exception ignored) {
-                            Log.d(TAG, "Other failure", ignored);
-                            // Login failed due to invalid (expired) token
-                            accountManager.invalidateAuthToken(Utils.ACCOUNT_TYPE, token);
-                        }
-                    }
-                }
-            }
-        }, null);
-    }
-
-    static void loginWithSavedAccount(final Activity activity,
-                                      final AccountManager accountManager,
                                       final Account account) {
         accountManager.getAuthToken(account, Utils.TOKEN_TYPE, null, false, new AccountManagerCallback<Bundle>() {
             @Override
@@ -383,8 +311,8 @@ public class UiUtils {
                     if (!TextUtils.isEmpty(token)) {
                         final SharedPreferences sharedPref
                                 = PreferenceManager.getDefaultSharedPreferences(activity);
-                        String hostName = Cache.HOST_NAME;
-                        boolean tls = Cache.PREFS_USE_TLS;
+                        String hostName = sharedPref.getString(Utils.PREFS_HOST_NAME, Cache.HOST_NAME);
+                        boolean tls = sharedPref.getBoolean(Utils.PREFS_USE_TLS, false);
                         try {
                             // Connecting with synchronous calls because this is not the UI thread.
                             final Tinode tinode = Cache.getTinode();
@@ -518,20 +446,40 @@ public class UiUtils {
         int width = bmp.getWidth();
         int height = bmp.getHeight();
         if (width > height) {
-            width = width * BITMAP_SIZE / height;
-            height = BITMAP_SIZE;
+            width = width * AVATAR_SIZE / height;
+            height = AVATAR_SIZE;
             // Sanity check
-            width = width > 1024 ? 1024 : width;
+            width = width > MAX_BITMAP_SIZE ? MAX_BITMAP_SIZE : width;
         } else {
-            height = height * BITMAP_SIZE / width;
-            width = BITMAP_SIZE;
-            height = height > 1024 ? 1024 : height;
+            height = height * AVATAR_SIZE / width;
+            width = AVATAR_SIZE;
+            height = height > MAX_BITMAP_SIZE ? MAX_BITMAP_SIZE : height;
         }
         // Scale up or down.
         bmp = Bitmap.createScaledBitmap(bmp, width, height, true);
         // Chop the square from the middle.
-        return Bitmap.createBitmap(bmp, (width - BITMAP_SIZE)/2, (height - BITMAP_SIZE)/2,
-                BITMAP_SIZE, BITMAP_SIZE);
+        return Bitmap.createBitmap(bmp, (width - AVATAR_SIZE)/2, (height - AVATAR_SIZE)/2,
+                AVATAR_SIZE, AVATAR_SIZE);
+    }
+
+    public static Bitmap scaleBitmap(Bitmap bmp) {
+        int width = bmp.getWidth();
+        int height = bmp.getHeight();
+        boolean changed = false;
+        if (width >= height) {
+            if (width > MAX_BITMAP_SIZE) {
+                changed = true;
+                height = height * MAX_BITMAP_SIZE / width;
+                width = MAX_BITMAP_SIZE;
+            }
+        } else {
+            if (height > MAX_BITMAP_SIZE) {
+                changed = true;
+                width = width * MAX_BITMAP_SIZE / height;
+                height = MAX_BITMAP_SIZE;
+            }
+        }
+        return changed ? Bitmap.createScaledBitmap(bmp, width, height, true) : bmp;
     }
 
     public static Bitmap extractBitmap(final Activity activity, final Intent data) {
@@ -607,14 +555,13 @@ public class UiUtils {
 
             // Gets a FileDescriptor from the AssetFileDescriptor. A BitmapFactory object can
             // decode the contents of a file pointed to by a FileDescriptor into a Bitmap.
-            FileDescriptor fileDescriptor = afd.getFileDescriptor();
-            if (fileDescriptor != null) {
+            if (afd != null) {
                 // Decodes a Bitmap from the image pointed to by the FileDescriptor, and scales it
                 // to the specified width and height
-                return ImageLoader.decodeSampledBitmapFromDescriptor(
-                        fileDescriptor, imageSize, imageSize);
+                return ImageLoader.decodeSampledBitmapFromStream(
+                        new BufferedInputStream(new FileInputStream(afd.getFileDescriptor())), imageSize, imageSize);
             }
-        } catch (FileNotFoundException e) {
+        } catch (IOException e) {
             // If the file pointed to by the thumbnail URI doesn't exist, or the file can't be
             // opened in "read" mode, ContentResolver.openAssetFileDescriptor throws a
             // FileNotFoundException.
@@ -636,6 +583,18 @@ public class UiUtils {
 
         // If the decoding failed, returns null
         return null;
+    }
+
+    public static ByteArrayInputStream bitmapToStream(Bitmap bmp, String mimeType) {
+        Bitmap.CompressFormat fmt;
+        if ("image/jpeg".equals(mimeType)) {
+            fmt = Bitmap.CompressFormat.JPEG;
+        } else {
+            fmt = Bitmap.CompressFormat.PNG;
+        }
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        bmp.compress(fmt, 70, bos);
+        return new ByteArrayInputStream(bos.toByteArray());
     }
 
     /**
@@ -742,8 +701,10 @@ public class UiUtils {
         builder
                 .setView(editor)
                 .setTitle(R.string.edit_permissions);
-        final LinkedHashMap<Character, Integer> checks = new LinkedHashMap<>(7);
-        checks.put('O', R.string.permission_owner);
+        final LinkedHashMap<Character, Integer> checks = new LinkedHashMap<>(8);
+        if (!noOwner) {
+            checks.put('O', R.string.permission_owner);
+        }
         checks.put('J', R.string.permission_join);
         checks.put('R', R.string.permission_read);
         checks.put('W', R.string.permission_write);
@@ -788,31 +749,48 @@ public class UiUtils {
                     PromisedReply reply = null;
                     switch (what) {
                         case ACTION_UPDATE_SELF_SUB:
+                            Log.d(TAG, "Update self sub: " + newAcsStr);
                             reply = topic.updateMode(null, newAcsStr.toString());
                             break;
                         case ACTION_UPDATE_SUB:
+                            Log.d(TAG, "Update other sub: " + newAcsStr);
                             reply = topic.updateMode(uid, newAcsStr.toString());
                             break;
                         case ACTION_UPDATE_AUTH:
+                            Log.d(TAG, "Update auth: " + newAcsStr);
                             reply = topic.updateDefAcs(newAcsStr.toString(), null);
                             break;
                         case ACTION_UPDATE_ANON:
+                            Log.d(TAG, "Update anon: " + newAcsStr);
                             reply = topic.updateDefAcs(null, newAcsStr.toString());
+                            break;
+                        default:
+                            Log.d(TAG, "Unknown action " + what);
                     }
 
+                    Log.d(TAG, "Reply is " + reply);
                     if (reply != null) {
-                        ((PromisedReply<ServerMessage>) reply).thenApply(null, new PromisedReply.FailureListener<ServerMessage>() {
-                            @Override
-                            public PromisedReply<ServerMessage> onFailure(Exception err) throws Exception {
-                                activity.runOnUiThread(new Runnable() {
+                        ((PromisedReply<ServerMessage>) reply).thenApply(
+                                new PromisedReply.SuccessListener<ServerMessage>() {
                                     @Override
-                                    public void run() {
-                                        Toast.makeText(activity, R.string.action_failed, Toast.LENGTH_SHORT).show();
+                                    public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                                        Log.d(TAG, "Successful update");
+                                        return null;
+                                    }
+                                },
+                                new PromisedReply.FailureListener<ServerMessage>() {
+                                    @Override
+                                    public PromisedReply<ServerMessage> onFailure(final Exception err) {
+                                        activity.runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                Log.d(TAG, "Failed", err);
+                                                Toast.makeText(activity, R.string.action_failed, Toast.LENGTH_SHORT).show();
+                                            }
+                                        });
+                                        return null;
                                     }
                                 });
-                                return null;
-                            }
-                        });
                     }
                 } catch (NotConnectedException ignored) {
                     Toast.makeText(activity, R.string.no_connection, Toast.LENGTH_SHORT).show();
@@ -1049,6 +1027,7 @@ public class UiUtils {
         }
     }
 
+    // Find path to content: DocumentProvider, DownloadsProvider, MediaProvider, MediaStore, File.
     public static String getPath(Context context, Uri uri) {
         // DocumentProvider
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT &&

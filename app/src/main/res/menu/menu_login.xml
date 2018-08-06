@@ -18,18 +18,9 @@
         android:id="@+id/action_signup"
         android:orderInCategory="100"
         android:title="@string/action_signup"
-        android:icon="@drawable/ic_person_add"
+        android:icon="@drawable/ic_person_add_vect"
         app:showAsAction="ifRoom" />
-<!--
-    <item
-        android:id="@+id/action_settings"
-        android:orderInCategory="101"
-        android:title="@string/action_settings"
-        android:icon="@drawable/ic_settings"
-        android:visible="false"
-        app:showAsAction="never" />
 
--->
     <item
         android:id="@+id/action_about"
         android:orderInCategory="102"

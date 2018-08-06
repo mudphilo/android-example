@@ -2,6 +2,8 @@ package com.legitimate.AllySuperApp;
 
 import android.Manifest;
 import android.annotation.SuppressLint;
+import android.app.DownloadManager;
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -13,17 +15,21 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.LoaderManager;
+import android.support.v4.content.FileProvider;
 import android.support.v4.content.Loader;
 import android.support.v4.widget.SwipeRefreshLayout;
-import android.support.v7.app.AppCompatDelegate;
 import android.support.v7.view.ActionMode;
+import android.support.v7.widget.AppCompatImageButton;
 import android.support.v7.widget.AppCompatImageView;
 import android.support.v7.widget.RecyclerView;
 import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.util.Base64;
 import android.util.Log;
+import android.util.LongSparseArray;
 import android.util.SparseBooleanArray;
 import android.view.LayoutInflater;
 import android.view.Menu;
@@ -31,18 +37,20 @@ import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
-
-import com.sdsmdg.harjot.vectormaster.VectorMasterView;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
-import com.legitimate.AllySuperApp.BuildConfig;
-import com.legitimate.AllySuperApp.R;
+import com.legitimate.AllySuperApp.db.BaseDb;
 import com.legitimate.AllySuperApp.db.MessageDb;
 import com.legitimate.AllySuperApp.db.StoredMessage;
 import com.legitimate.AllySuperApp.media.SpanFormatter;
@@ -50,8 +58,10 @@ import com.legitimate.AllySuperApp.media.VxCard;
 import com.legitimate.AllySuperApp.widgets.LetterTileDrawable;
 import com.legitimate.AllySuperApp.widgets.RoundImageDrawable;
 import co.tinode.tinodesdk.ComTopic;
+import co.tinode.tinodesdk.LargeFileHelper;
 import co.tinode.tinodesdk.NotConnectedException;
 import co.tinode.tinodesdk.PromisedReply;
+import co.tinode.tinodesdk.Storage;
 import co.tinode.tinodesdk.Topic;
 import co.tinode.tinodesdk.model.ServerMessage;
 import co.tinode.tinodesdk.model.Subscription;
@@ -59,10 +69,13 @@ import co.tinode.tinodesdk.model.Subscription;
 /**
  * Handle display of a conversation
  */
-public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapter.ViewHolder> {
+public class MessagesListAdapter
+        extends RecyclerView.Adapter<MessagesListAdapter.ViewHolder>
+        implements LoaderManager.LoaderCallbacks<Cursor> {
     private static final String TAG = "MessagesListAdapter";
 
     private static final int MESSAGES_TO_LOAD = 20;
+
     private static final int MESSAGES_QUERY_ID = 100;
 
     private static final int VIEWTYPE_FULL_LEFT = 0;
@@ -84,27 +97,31 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
     private RecyclerView mRecyclerView;
 
     private Cursor mCursor;
-    private String mTopicName;
+    private String mTopicName = null;
     private ActionMode.Callback mSelectionModeCallback;
     private ActionMode mSelectionMode;
 
     private SparseBooleanArray mSelectedItems = null;
 
     private int mPagesToLoad;
-    private MessageLoaderCallbacks mLoaderCallbacks;
     private SwipeRefreshLayout mRefresher;
 
-    static {
-        AppCompatDelegate.setCompatVectorFromResourcesEnabled(true);
-    }
+    // This is a map of message IDs to their corresponding loader IDs.
+    // This is needed for upload cancellations.
+    private LongSparseArray<Integer> mLoaders = null;
+
+    private SpanClicker mSpanFormatterClicker;
 
     public MessagesListAdapter(MessageActivity context, SwipeRefreshLayout refresher) {
         super();
+
         mActivity = context;
         setHasStableIds(true);
-        mLoaderCallbacks = new MessageLoaderCallbacks();
+
         mRefresher = refresher;
         mPagesToLoad = 1;
+
+        mLoaders = new LongSparseArray<>();
 
         mSelectionModeCallback = new ActionMode.Callback() {
             @Override
@@ -153,10 +170,14 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
                 return false;
             }
         };
+
+        mSpanFormatterClicker = new SpanClicker();
+
+        verifyStoragePermissions();
     }
 
     @Override
-    public void onAttachedToRecyclerView(RecyclerView recyclerView) {
+    public void onAttachedToRecyclerView(@NonNull RecyclerView recyclerView) {
         super.onAttachedToRecyclerView(recyclerView);
 
         mRecyclerView = recyclerView;
@@ -202,40 +223,48 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
     @SuppressWarnings("unchecked")
     private void sendDeleteMessages(final int[] positions) {
         final Topic topic = Cache.getTinode().getTopic(mTopicName);
-
+        final Storage store = BaseDb.getInstance().getStore();
         if (topic != null) {
-            int[] list = new int[positions.length];
+            ArrayList<Integer> toDelete = new ArrayList<>();
             int i = 0;
+            int discarded = 0;
             while (i < positions.length) {
-                int pos = positions[i];
+                int pos = positions[i++];
                 StoredMessage msg = getMessage(pos);
                 if (msg != null) {
-                    list[i] = msg.seq;
-                    i++;
+                    if (msg.status == BaseDb.STATUS_SYNCED) {
+                        toDelete.add(msg.seq);
+                    } else {
+                        store.msgDiscard(topic, msg.getId());
+                        discarded ++;
+                    }
                 }
             }
 
-            try {
-                topic.delMessages(list, true).thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
-                    @Override
-                    public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
-                        runLoader();
-                        mActivity.runOnUiThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                // Update message list.
-                                notifyDataSetChanged();
-                                updateSelectionMode();
-                            }
-                        });
-                        return null;
-                    }
-                }, null);
-            } catch (NotConnectedException ignored) {
-                Log.d(TAG, "sendDeleteMessages -- NotConnectedException");
-            } catch (Exception ignored) {
-                Log.d(TAG, "sendDeleteMessages -- Exception", ignored);
-                Toast.makeText(mActivity, R.string.failed_to_delete_messages, Toast.LENGTH_SHORT).show();
+            if (!toDelete.isEmpty()) {
+                try {
+                    topic.delMessages(toDelete, true).thenApply(new PromisedReply.SuccessListener<ServerMessage>() {
+                        @Override
+                        public PromisedReply<ServerMessage> onSuccess(ServerMessage result) {
+                            runLoader();
+                            mActivity.runOnUiThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    updateSelectionMode();
+                                }
+                            });
+                            return null;
+                        }
+                    }, null);
+                } catch (NotConnectedException ignored) {
+                    Log.d(TAG, "sendDeleteMessages -- NotConnectedException");
+                } catch (Exception ignored) {
+                    Log.d(TAG, "sendDeleteMessages -- Exception", ignored);
+                    Toast.makeText(mActivity, R.string.failed_to_delete_messages, Toast.LENGTH_SHORT).show();
+                }
+            } else if (discarded > 0) {
+                runLoader();
+                updateSelectionMode();
             }
         }
     }
@@ -246,11 +275,11 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
         StoredMessage m = getMessage(position);
         Topic.TopicType tp = Topic.getTopicTypeByName(mTopicName);
 
-        // Logic for less vertical spacing between subsequent messages from the same sender vs different senders;
-        // Cursor holds items in reverse order.
+        // Logic for less vertical spacing between subsequent messages from the same sender vs different senders.
+        // Zero item position is on the bottom of the screen.
         long nextFrom = -2;
-        if (position < getItemCount() - 1) {
-            nextFrom = getMessage(position + 1).userId;
+        if (position > 0) {
+            nextFrom = getMessage(position - 1).userId;
         }
 
         final boolean isMine = m.isMine();
@@ -269,7 +298,7 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
     }
 
     @Override
-    public ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
+    public ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         // create a new view
         View v;
 
@@ -310,117 +339,66 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
                     .setColorFilter(bgColor, PorterDuff.Mode.MULTIPLY);
         }
 
-        return new ViewHolder(v, viewType, BuildConfig.FLAVOR);
+        return new ViewHolder(v, viewType);
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    @Override
+    public void onBindViewHolder(@NonNull final ViewHolder holder, int position, List<Object> payload) {
+        if (payload != null && !payload.isEmpty()) {
+            Float progress = (Float) payload.get(0);
+            holder.mProgressBar.setProgress((int) (progress * 100));
+            return;
+        }
+
+        onBindViewHolder(holder, position);
     }
 
     @SuppressLint("ClickableViewAccessibility")
     @SuppressWarnings("unchecked")
     @Override
-    public void onBindViewHolder(final ViewHolder holder, int position) {
+    public void onBindViewHolder(@NonNull final ViewHolder holder, int position) {
+
         ComTopic<VxCard> topic = (ComTopic<VxCard>) Cache.getTinode().getTopic(mTopicName);
-        StoredMessage m = getMessage(position);
 
+        final StoredMessage m = getMessage(position);
+
+        // Disable attachment clicker.
+        boolean disableEnt = (m.status == BaseDb.STATUS_QUEUED || m.status == BaseDb.STATUS_DRAFT) &&
+                (m.content.getEntReferences() != null);
+
+        mSpanFormatterClicker.setPosition(position);
         holder.mText.setText(SpanFormatter.toSpanned(mActivity, m.content, holder.mText.getMaxWidth(),
-                new SpanFormatter.ClickListener() {
-            @Override
-            public void onClick(String type, Map<String, Object> data) {
-                if (mSelectedItems != null) {
-                    int pos = holder.getAdapterPosition();
-                    toggleSelectionAt(pos);
-                    notifyItemChanged(pos);
-                    updateSelectionMode();
-                    return;
-                }
-
-                switch (type) {
-                    case "LN":
-                        String url = null;
-                        try {
-                            if (data != null) {
-                                url = (String) data.get("url");
-                            }
-                        } catch (ClassCastException ignored) {}
-                        if (url != null) {
-                            mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
-                        }
-                        break;
-
-                    case "IM":
-                        Bundle args = new Bundle();
-                        if (data != null) {
-                            try {
-                                Object val = data.get("val");
-                                args.putByteArray("image", val instanceof String ?
-                                        Base64.decode((String) val, Base64.DEFAULT) :
-                                        (byte[]) val);
-                                args.putString("mime", (String) data.get("mime"));
-                                args.putString("name", (String) data.get("name"));
-                            } catch (ClassCastException ignored) {
-                            }
-                        }
-
-                        if (args.getByteArray("image") != null) {
-                            mActivity.showFragment("view_image", true, args);
-                        } else {
-                            Toast.makeText(mActivity, R.string.broken_image, Toast.LENGTH_SHORT).show();
-                        }
-
-                        break;
-
-                    case "EX":
-                        verifyStoragePermissions();
-
-                        String fname = null;
-                        String mimeType = null;
-                        try {
-                            fname = (String) data.get("name");
-                            mimeType = (String) data.get("mime");
-                        } catch (ClassCastException ignored) {}
-
-                        if (TextUtils.isEmpty(fname)) {
-                            fname = mActivity.getString(R.string.default_attachment_name);
-                        }
-
-                        // Create file in a downloads directory by default.
-                        File file = new File(
-                                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), fname);
-                        Uri fileUri = Uri.fromFile(file);
-                        if (TextUtils.isEmpty(mimeType)) {
-                            mimeType = UiUtils.getMimeType(fileUri);
-                            if (mimeType == null) {
-                                mimeType = "*/*";
-                            }
-                        }
-
-                        try {
-                            Object val = data.get("val");
-                            FileOutputStream fos = new FileOutputStream(file);
-                            fos.write(val instanceof String ?
-                                    Base64.decode((String) val, Base64.DEFAULT) : (byte[]) val);
-                            fos.close();
-
-                            Intent intent = new Intent();
-                            intent.setAction(android.content.Intent.ACTION_VIEW);
-                            intent.setDataAndType(fileUri, mimeType);
-                            mActivity.startActivity(intent);
-                        } catch (NullPointerException | ClassCastException | IOException ex) {
-                            Log.e(TAG, "Failed to save attachment to storage", ex);
-                            Toast.makeText(mActivity, R.string.failed_to_attach, Toast.LENGTH_SHORT).show();
-                        }
-                        break;
-                }
-            }
-        }));
+                disableEnt ? null : mSpanFormatterClicker));
         if (SpanFormatter.hasClickableSpans(m.content)) {
             holder.mText.setLinksClickable(true);
             holder.mText.setFocusable(true);
             holder.mText.setClickable(true);
             holder.mText.setMovementMethod(LinkMovementMethod.getInstance());
         }
+        if (holder.mProgressInclude != null) {
+            if (disableEnt) {
+                final long msgId = m.getId();
+                holder.mProgressResult.setVisibility(View.GONE);
+                holder.mProgress.setVisibility(View.VISIBLE);
+                holder.mProgressInclude.setVisibility(View.VISIBLE);
+                holder.mCancelProgress.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        if (cancelUpload(msgId)) {
+                            holder.mProgress.setVisibility(View.GONE);
+                            holder.mProgressResult.setVisibility(View.VISIBLE);
+                        }
+                    }
+                });
+            } else {
+                holder.mProgressInclude.setVisibility(View.GONE);
+                holder.mCancelProgress.setOnClickListener(null);
+            }
+        }
 
         if (holder.mSelected != null) {
             if (mSelectedItems != null && mSelectedItems.get(position)) {
-                // Log.d(TAG, "Visible item " + position);
                 holder.mSelected.setVisibility(View.VISIBLE);
             } else {
                 holder.mSelected.setVisibility(View.GONE);
@@ -452,44 +430,18 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
             holder.mMeta.setText(UiUtils.shortDate(m.ts));
         }
 
-        if(BuildConfig.FLAVOR.equalsIgnoreCase("minApi21")) {
-
-            if (holder.mDeliveredIcon != null) {
-
-                holder.mDeliveredIcon.setImageResource(android.R.color.transparent);
-
-                if (holder.mViewType == VIEWTYPE_FULL_RIGHT || holder.mViewType == VIEWTYPE_SIMPLE_RIGHT) {
-                    if (m.seq <= 0) {
-                        holder.mDeliveredIcon.setImageResource(R.drawable.ic_schedule);
-                    } else if (topic != null) {
-                        if (topic.msgReadCount(m.seq) > 0) {
-                            holder.mDeliveredIcon.setImageResource(R.drawable.ic_visibility);
-                        } else if (topic.msgRecvCount(m.seq) > 0) {
-                            holder.mDeliveredIcon.setImageResource(R.drawable.ic_done_all);
-                        } else {
-                            holder.mDeliveredIcon.setImageResource(R.drawable.ic_done);
-                        }
-                    }
-                }
-            }
-        }
-        else if(BuildConfig.FLAVOR.equalsIgnoreCase("minApi16")) {
-
-            if (holder.mDeliveredIconVector != null) {
-
-                holder.mDeliveredIconVector.setBackgroundResource(android.R.color.transparent);
-
-                if (holder.mViewType == VIEWTYPE_FULL_RIGHT || holder.mViewType == VIEWTYPE_SIMPLE_RIGHT) {
-                    if (m.seq <= 0) {
-                        holder.mDeliveredIconVector.setBackgroundResource(R.drawable.ic_schedule);
-                    } else if (topic != null) {
-                        if (topic.msgReadCount(m.seq) > 0) {
-                            holder.mDeliveredIconVector.setBackgroundResource(R.drawable.ic_visibility);
-                        } else if (topic.msgRecvCount(m.seq) > 0) {
-                            holder.mDeliveredIconVector.setBackgroundResource(R.drawable.ic_done_all);
-                        } else {
-                            holder.mDeliveredIconVector.setBackgroundResource(R.drawable.ic_done);
-                        }
+        if (holder.mDeliveredIcon != null) {
+            holder.mDeliveredIcon.setImageResource(android.R.color.transparent);
+            if (holder.mViewType == VIEWTYPE_FULL_RIGHT || holder.mViewType == VIEWTYPE_SIMPLE_RIGHT) {
+                if (m.status <= BaseDb.STATUS_QUEUED) {
+                    holder.mDeliveredIcon.setImageResource(R.drawable.ic_schedule);
+                } else if (topic != null) {
+                    if (topic.msgReadCount(m.seq) > 0) {
+                        holder.mDeliveredIcon.setImageResource(R.drawable.ic_visibility);
+                    } else if (topic.msgRecvCount(m.seq) > 0) {
+                        holder.mDeliveredIcon.setImageResource(R.drawable.ic_done_all);
+                    } else {
+                        holder.mDeliveredIcon.setImageResource(R.drawable.ic_done);
                     }
                 }
             }
@@ -499,6 +451,7 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
             @Override
             public boolean onLongClick(View v) {
                 int pos = holder.getAdapterPosition();
+
                 if (mSelectedItems == null) {
                     mSelectionMode = mActivity.startSupportActionMode(mSelectionModeCallback);
                 }
@@ -521,14 +474,27 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
                 }
             }
         });
+    }
 
-        // Log.d(TAG, "Msg[" + position + "] seq=" + m.seq + " at " + m.ts.getTime());
+    // Must match position-to-item of getItemId.
+    StoredMessage getMessage(int position) {
+        if (mCursor != null) {
+            if (mCursor.moveToPosition(position)) {
+                return StoredMessage.readMessage(mCursor);
+            }
+        }
+        return null;
     }
 
     @Override
+    // Must match position-to-item of getMessage.
     public long getItemId(int position) {
-        mCursor.moveToPosition(position);
-        return MessageDb.getLocalId(mCursor);
+        if (mCursor != null && !mCursor.isClosed()) {
+            if (mCursor.moveToPosition(position)) {
+                return MessageDb.getLocalId(mCursor);
+            }
+        }
+        return -1;
     }
 
     @Override
@@ -557,7 +523,7 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
         return mSelectionMode != null;
     }
 
-    void swapCursor(final String topicName, final Cursor cursor) {
+    void swapCursor(final String topicName, final Cursor cursor, boolean refresh) {
         if (mCursor != null && mCursor == cursor) {
             return;
         }
@@ -574,13 +540,17 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
         if (oldCursor != null) {
             oldCursor.close();
         }
-
-        // Log.d(TAG, "swapped cursor, topic=" + mTopicName);
-    }
-
-    private StoredMessage getMessage(int position) {
-        mCursor.moveToPosition(mCursor.getCount() - position - 1);
-        return StoredMessage.readMessage(mCursor);
+        if (refresh) {
+            mActivity.runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mRefresher.setRefreshing(false);
+                    notifyDataSetChanged();
+                    if (cursor != null)
+                        mRecyclerView.scrollToPosition(0);
+                }
+            });
+        }
     }
 
     /**
@@ -588,24 +558,30 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
      *
      * If the app does not has permission then the user will be prompted to grant permission.
      */
-    public void verifyStoragePermissions() {
+    private void verifyStoragePermissions() {
         // Check if we have write permission
         if (!UiUtils.checkPermission(mActivity, Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
             // We don't have permission so prompt the user
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                mActivity.requestPermissions(PERMISSIONS_STORAGE, REQUEST_EXTERNAL_STORAGE);
+                ActivityCompat.requestPermissions(mActivity, PERMISSIONS_STORAGE, REQUEST_EXTERNAL_STORAGE);
             }
         }
     }
 
+    // Run loader on UI thread
     void runLoader() {
-        LoaderManager lm = mActivity.getSupportLoaderManager();
-        final Loader<Cursor> loader = lm.getLoader(MESSAGES_QUERY_ID);
-        if (loader != null && !loader.isReset()) {
-            lm.restartLoader(MESSAGES_QUERY_ID, null, mLoaderCallbacks);
-        } else {
-            lm.initLoader(MESSAGES_QUERY_ID, null, mLoaderCallbacks);
-        }
+        mActivity.runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                final LoaderManager lm = mActivity.getSupportLoaderManager();
+                final Loader<Cursor> loader = lm.getLoader(MESSAGES_QUERY_ID);
+                if (loader != null && !loader.isReset()) {
+                    lm.restartLoader(MESSAGES_QUERY_ID, null, MessagesListAdapter.this);
+                } else {
+                    lm.initLoader(MESSAGES_QUERY_ID, null, MessagesListAdapter.this);
+                }
+            }
+        });
     }
 
     boolean loadNextPage() {
@@ -618,42 +594,32 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
         return false;
     }
 
-    private class MessageLoaderCallbacks implements LoaderManager.LoaderCallbacks<Cursor> {
-
-        @Override
-        public Loader<Cursor> onCreateLoader(int id, Bundle args) {
-            if (id == MESSAGES_QUERY_ID) {
-                return new MessageDb.Loader(mActivity, mTopicName, mPagesToLoad, MESSAGES_TO_LOAD);
-            }
-            return null;
+    @NonNull
+    @Override
+    public Loader<Cursor> onCreateLoader(int id, Bundle args) {
+        if (id == MESSAGES_QUERY_ID) {
+            return new MessageDb.Loader(mActivity, mTopicName, mPagesToLoad, MESSAGES_TO_LOAD);
         }
 
-        @Override
-        public void onLoadFinished(Loader<Cursor> loader,
-                                   Cursor cursor) {
-            if (loader.getId() == MESSAGES_QUERY_ID) {
-                swapCursor(mTopicName, cursor);
-            }
-        }
+        throw new  IllegalArgumentException("Unknown loader id " + id);
+    }
 
-        @Override
-        public void onLoaderReset(Loader<Cursor> loader) {
-            if (loader.getId() == MESSAGES_QUERY_ID) {
-                swapCursor(null, null);
-            }
+    @Override
+    public void onLoadFinished(@NonNull Loader<Cursor> loader,
+                               Cursor cursor) {
+        switch (loader.getId()) {
+            case MESSAGES_QUERY_ID:
+                swapCursor(mTopicName, cursor, true);
+                break;
         }
+    }
 
-        private void swapCursor(final String topicName, final Cursor cursor) {
-            MessagesListAdapter.this.swapCursor(topicName, cursor);
-            mActivity.runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        mRefresher.setRefreshing(false);
-                        notifyDataSetChanged();
-                        if (cursor != null)
-                            mRecyclerView.scrollToPosition(cursor.getCount() - 1);
-                    }
-                });
+    @Override
+    public void onLoaderReset(@NonNull Loader<Cursor> loader) {
+        switch (loader.getId()) {
+            case MESSAGES_QUERY_ID:
+                swapCursor(null, null, true);
+                break;
         }
     }
 
@@ -661,38 +627,196 @@ public class MessagesListAdapter extends RecyclerView.Adapter<MessagesListAdapte
         int mViewType;
         ImageView mAvatar;
         View mMessageBubble;
-
         AppCompatImageView mDeliveredIcon;
-        VectorMasterView mDeliveredIconVector;
-
         TextView mText;
         TextView mMeta;
         TextView mUserName;
         View mSelected;
         View mOverlay;
-        String flavor;
+        View mProgressInclude;
+        ProgressBar mProgressBar;
+        AppCompatImageButton mCancelProgress;
+        View mProgress;
+        View mProgressResult;
 
-        ViewHolder(View itemView, int viewType,String flavor) {
+        ViewHolder(View itemView, int viewType) {
             super(itemView);
 
             mViewType = viewType;
-            this.flavor = flavor;
             mAvatar = itemView.findViewById(R.id.avatar);
             mMessageBubble = itemView.findViewById(R.id.messageBubble);
-
-            if(flavor.equalsIgnoreCase("minApi21")) {
-                mDeliveredIcon = itemView.findViewById(R.id.messageViewedIcon);
-            }
-
-            if(flavor.equalsIgnoreCase("minApi16")) {
-                mDeliveredIconVector = itemView.findViewById(R.id.messageViewedIcon);
-            }
-
+            mDeliveredIcon = itemView.findViewById(R.id.messageViewedIcon);
             mText = itemView.findViewById(R.id.messageText);
             mMeta = itemView.findViewById(R.id.messageMeta);
             mUserName = itemView.findViewById(R.id.userName);
             mSelected = itemView.findViewById(R.id.selected);
             mOverlay = itemView.findViewById(R.id.overlay);
+            mProgressInclude = itemView.findViewById(R.id.progressInclide);
+            mProgress = itemView.findViewById(R.id.progressPanel);
+            mProgressBar = itemView.findViewById(R.id.attachmentProgressBar);
+            mCancelProgress = itemView.findViewById(R.id.attachmentProgressCancel);
+            mProgressResult = itemView.findViewById(R.id.progressResult);
+        }
+    }
+
+    void addLoaderMapping(Long msgId, int loaderId) {
+        mLoaders.put(msgId, loaderId);
+    }
+
+    Integer getLoaderMapping(Long msgId) {
+        return mLoaders.get(msgId);
+    }
+
+    private boolean cancelUpload(long msgId) {
+        Integer loaderId = mLoaders.get(msgId);
+        if (loaderId != null) {
+            mActivity.getSupportLoaderManager().destroyLoader(loaderId);
+            // Change mapping to force background loading process to return early.
+            addLoaderMapping(msgId, -1);
+            return true;
+        }
+        return false;
+    }
+
+    private void downloadAttachment(Map<String,Object> data, String fname, String mimeType) {
+
+        // Create file in a downloads directory by default.
+        File path = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        File file = new File(path, fname);
+        Uri fileUri = Uri.fromFile(file);
+
+        if (TextUtils.isEmpty(mimeType)) {
+            mimeType = UiUtils.getMimeType(fileUri);
+            if (mimeType == null) {
+                mimeType = "*/*";
+            }
+        }
+
+        FileOutputStream fos = null;
+        try {
+            if (!Environment.getExternalStorageState().equals(Environment.MEDIA_MOUNTED)) {
+                Log.d(TAG, "External storage not mounted: " + path);
+
+            } else if (!(path.mkdirs() || path.isDirectory())) {
+                Log.d(TAG, "Path is not a directory - " + path);
+            }
+
+            Object val = data.get("val");
+            if (val != null) {
+                fos = new FileOutputStream(file);
+                fos.write(val instanceof String ?
+                        Base64.decode((String) val, Base64.DEFAULT) :
+                        (byte[]) val);
+
+                Intent intent = new Intent();
+                intent.setAction(android.content.Intent.ACTION_VIEW);
+                intent.setDataAndType(FileProvider.getUriForFile(mActivity,
+                        "co.tinode.tindroid.provider", file), mimeType);
+                intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                try {
+                    mActivity.startActivity(intent);
+                } catch (ActivityNotFoundException ignored) {
+                    mActivity.startActivity(new Intent(DownloadManager.ACTION_VIEW_DOWNLOADS));
+                }
+
+            } else {
+                Object ref = data.get("ref");
+                if (ref != null && ref instanceof String) {
+                    LargeFileHelper lfh = Cache.getTinode().getFileUploader();
+                    mActivity.startDownload(Uri.parse(new URL(Cache.getTinode().getBaseUrl(), (String) ref).toString()),
+                            fname, mimeType, lfh.headers());
+                } else {
+                    Log.e(TAG, "Invalid or missing attachment");
+                    Toast.makeText(mActivity, R.string.failed_to_download, Toast.LENGTH_SHORT).show();
+                }
+            }
+
+        } catch (NullPointerException | ClassCastException | IOException ex) {
+            Log.d(TAG, "Failed to save attachment to storage", ex);
+            Toast.makeText(mActivity, R.string.failed_to_download, Toast.LENGTH_SHORT).show();
+        } catch (ActivityNotFoundException ex) {
+            Log.i(TAG, "No application can handle downloaded file");
+            Toast.makeText(mActivity, R.string.failed_to_open_file, Toast.LENGTH_SHORT).show();
+        } finally {
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    class SpanClicker implements SpanFormatter.ClickListener {
+        private int mPosition = -1;
+
+        void setPosition(int pos) {
+            mPosition = pos;
+        }
+
+        @Override
+        public void onClick(String type, Map<String, Object> data) {
+            if (mSelectedItems != null) {
+                toggleSelectionAt(mPosition);
+                notifyItemChanged(mPosition);
+                updateSelectionMode();
+                return;
+            }
+
+            switch (type) {
+                case "LN":
+                    String url = null;
+                    try {
+                        if (data != null) {
+                            url = (String) data.get("url");
+                        }
+                    } catch (ClassCastException ignored) {}
+                    if (url != null) {
+                        try {
+                            url = new URL(Cache.getTinode().getBaseUrl(), url).toString();
+                            mActivity.startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+                        } catch (MalformedURLException ignored) {}
+                    }
+                    break;
+
+                case "IM":
+                    Bundle args = new Bundle();
+                    if (data != null) {
+                        try {
+                            Object val = data.get("val");
+                            args.putByteArray("image", val instanceof String ?
+                                    Base64.decode((String) val, Base64.DEFAULT) :
+                                    (byte[]) val);
+                            args.putString("mime", (String) data.get("mime"));
+                            args.putString("name", (String) data.get("name"));
+                        } catch (ClassCastException ignored) {
+                        }
+                    }
+
+                    if (args.getByteArray("image") != null) {
+                        mActivity.showFragment("view_image", true, args);
+                    } else {
+                        Toast.makeText(mActivity, R.string.broken_image, Toast.LENGTH_SHORT).show();
+                    }
+
+                    break;
+
+                case "EX":
+                    verifyStoragePermissions();
+
+                    String fname = null;
+                    String mimeType = null;
+                    try {
+                        fname = (String) data.get("name");
+                        mimeType = (String) data.get("mime");
+                    } catch (ClassCastException ignored) {}
+
+                    if (TextUtils.isEmpty(fname)) {
+                        fname = mActivity.getString(R.string.default_attachment_name);
+                    }
+
+                    downloadAttachment(data, fname, mimeType);
+                    break;
+            }
         }
     }
 }

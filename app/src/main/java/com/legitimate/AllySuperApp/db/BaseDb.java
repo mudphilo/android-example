@@ -5,6 +5,7 @@ import android.content.Context;
 import android.content.SharedPreferences;
 import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteOpenHelper;
+import android.net.Uri;
 import android.os.Build;
 import android.provider.BaseColumns;
 import android.util.Log;
@@ -17,7 +18,10 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutput;
 import java.io.ObjectOutputStream;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.legitimate.AllySuperApp.App;
+
+import co.tinode.tinodesdk.Tinode;
 import co.tinode.tinodesdk.model.Acs;
 import co.tinode.tinodesdk.model.Defacs;
 
@@ -27,17 +31,34 @@ import co.tinode.tinodesdk.model.Defacs;
 public class BaseDb extends SQLiteOpenHelper {
     private static final String TAG = "BaseDb";
 
-    // Object not yet sent to the server
-    public static final int STATUS_QUEUED = 0;
-    // Object received by the server
-    public static final int STATUS_SYNCED = 1;
-    // Object deleted
-    public static final int STATUS_DELETED = 2;
-    // Object rejected
-    public static final int STATUS_REJECTED = 3;
+    /**
+     * Content provider authority.
+     */
+    public static final String CONTENT_AUTHORITY = "com.legitimate.AllySuperApp.provider";
+    /**
+     * Base content URI. (content://co.tinode.tindroid)
+     */
+    public static final Uri BASE_CONTENT_URI = Uri.parse("content://" + BaseDb.CONTENT_AUTHORITY);
+
+    // Status undefined/not set.
+    public static final int STATUS_UNDEFINED = 0;
+    // Object is not ready to be sent to the server.
+    public static final int STATUS_DRAFT = 1;
+    // Object is ready but not yet sent to the server
+    public static final int STATUS_QUEUED = 2;
+    // Object is received by the server
+    public static final int STATUS_SYNCED = 3;
+    // Meta-status: object should be visible in the UI
+    public static final int STATUS_VISIBLE = 3;
+    // Object is hard-deleted
+    public static final int STATUS_DELETED_HARD = 4;
+    // Object is soft-deleted
+    public static final int STATUS_DELETED_SOFT = 5;
+    // Object is rejected by the server.
+    public static final int STATUS_REJECTED = 6;
 
     /**
-     * Schema version.
+     * Schema version. Increment on schema changes.
      */
     private static final int DATABASE_VERSION = 4;
     /**
@@ -51,14 +72,11 @@ public class BaseDb extends SQLiteOpenHelper {
 
     private SqlStore mStore = null;
 
-    private Context context = null;
-
     /**
      * Private constructor
      */
     private BaseDb(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        this.context = context;
     }
 
     /**
@@ -75,49 +93,36 @@ public class BaseDb extends SQLiteOpenHelper {
         return sInstance;
     }
 
-    static byte[] serialize(Object obj) {
+    /**
+     * Serializes object as "canonical_class_name;json_representation of content".
+     *
+     * @param obj object to serialize
+     * @return string representation of the object.
+     */
+    static String serialize(Object obj) {
         if (obj != null) {
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            ObjectOutput objout = null;
             try {
-                objout = new ObjectOutputStream(baos);
-                objout.writeObject(obj);
-                objout.flush();
-                return baos.toByteArray();
-            } catch (IOException ex) {
+                return obj.getClass().getCanonicalName() + ";" + Tinode.jsonSerialize(obj);
+            } catch (JsonProcessingException ex) {
                 Log.e(TAG, "Failed to serialize", ex);
-            } finally {
-                try {
-                    baos.close();
-                    if (objout != null) {
-                        objout.close();
-                    }
-                } catch (IOException ex) {
-                    Log.e(TAG, "Failed to close in serialize", ex);
-                }
             }
         }
         return null;
     }
 
-    static <T> T deserialize(byte[] bytes) {
-        if (bytes != null) {
-            ByteArrayInputStream bais = new ByteArrayInputStream(bytes);
-            ObjectInput objin = null;
+    /**
+     * Parses serialized class from "canonical_class_name;json_representation of content".
+     * @param input string to parse
+     * @param <T> type of the prased object
+     * @return parsed object or null
+     */
+    static <T> T deserialize(String input) {
+        if (input != null) {
             try {
-                objin = new ObjectInputStream(bais);
-                return (T) objin.readObject();
-            } catch (IOException | ClassNotFoundException | ClassCastException ex) {
+                String[] parts = input.split(";", 2);
+                return Tinode.jsonDeserialize(parts[1], parts[0]);
+            } catch (ClassCastException ex) {
                 Log.e(TAG, "Failed to de-serialize", ex);
-            } finally {
-                try {
-                    bais.close();
-                    if (objin != null) {
-                        objin.close();
-                    }
-                } catch (IOException ex) {
-                    Log.e(TAG, "Failed to close in de-serialize", ex);
-                }
             }
         }
         return null;
@@ -211,20 +216,12 @@ public class BaseDb extends SQLiteOpenHelper {
         return mAcc != null ? mAcc.uid : null;
     }
 
-    public String getCC() {
-        return mAcc != null ? mAcc.cc : "KE";
-    }
-
     public void setUid(String uid) {
         if (uid == null) {
             mAcc = null;
         } else {
             if (mAcc == null) {
-                SharedPreferences sharedPref = this.context.getSharedPreferences("ASA", 0);
-
-                String cc = sharedPref.getString("CC","KE");
-
-                mAcc = AccountDb.addOrActivateAccount(sInstance.getReadableDatabase(), uid,cc);
+                mAcc = AccountDb.addOrActivateAccount(sInstance.getReadableDatabase(), uid);
             } else if (!mAcc.uid.equals(uid)) {
                 // It won't work if the account is switched on a live DB.
                 throw new IllegalStateException("Illegal account assignment");
@@ -288,10 +285,6 @@ public class BaseDb extends SQLiteOpenHelper {
 
     @Override
     public void onConfigure(SQLiteDatabase db) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            db.setForeignKeyConstraintsEnabled(true);
-        } else {
-            db.execSQL("PRAGMA foreign_keys = ON;");
-        }
+        db.setForeignKeyConstraintsEnabled(true);
     }
 }

@@ -1,5 +1,7 @@
 package co.tinode.tinodesdk.model;
 
+import java.util.List;
+
 /**
  * Topic or message deletion packet
  *
@@ -39,8 +41,8 @@ public class MsgClientDel {
     /**
      * Delete messages with ids in the list
      */
-    public MsgClientDel(String id, String topic, int[] list, boolean hard) {
-        this(id, topic, STR_MSG, MsgDelRange.arrayToRanges(list), null, hard);
+    public MsgClientDel(String id, String topic, List<Integer> list, boolean hard) {
+        this(id, topic, STR_MSG, MsgDelRange.listToRanges(list), null, hard);
     }
 
     /**
@@ -48,6 +50,13 @@ public class MsgClientDel {
      */
     public MsgClientDel(String id, String topic, int fromId, int toId, boolean hard) {
         this(id, topic, STR_MSG, new MsgDelRange[]{new MsgDelRange(fromId, toId)}, null, hard);
+    }
+
+    /**
+     * Delete one message.
+     */
+    public MsgClientDel(String id, String topic, int seqId, boolean hard) {
+        this(id, topic, STR_MSG, new MsgDelRange[]{new MsgDelRange(seqId)}, null, hard);
     }
 
     /**

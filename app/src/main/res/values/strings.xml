@@ -196,4 +196,13 @@
     <string name="failed_empty_id">ID is required</string>
     <string name="topic_not_found_or_invalid">Topic not found or invalid</string>
     <string name="sending_disabled">Not available</string>
+
+    <string name="failed_to_download">Failed to save downloaded file</string>
+    <string name="failed_to_open_file">No application can view the file of this type</string>
+    <string name="download_title">Tindroid download</string>
+    <string name="some_permissions_missing">Some permissions missing.</string>
+    <string name="invalid_file">Unable to attach this file</string>
+    <string name="cancelled">cancelled</string>
+    <string name="yourPermissions">Yours</string>
+
 </resources>

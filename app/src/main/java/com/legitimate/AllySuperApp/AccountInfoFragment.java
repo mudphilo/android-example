@@ -7,7 +7,9 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.Typeface;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
 import android.support.v4.app.Fragment;
+import android.support.v4.app.FragmentManager;
 import android.support.v7.app.ActionBar;
 import android.support.v7.app.AlertDialog;
 import android.support.v7.app.AppCompatActivity;
@@ -40,6 +42,9 @@ import static android.app.Activity.RESULT_OK;
 /**
  * Fragment for editing current user details.
  */
+/**
+ * Fragment for editing current user details.
+ */
 public class AccountInfoFragment extends Fragment {
 
     private static final String TAG = "AccountInfoFragment";
@@ -54,12 +59,14 @@ public class AccountInfoFragment extends Fragment {
     }
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
+    public View onCreateView(@NonNull LayoutInflater inflater, ViewGroup container,
                              Bundle savedInstanceState) {
         Log.d(TAG, "AccountInfoFragment.onCreateView");
 
         final AppCompatActivity activity = (AppCompatActivity) getActivity();
-
+        if (activity == null) {
+            return  null;
+        }
         // Inflate the fragment layout
         View fragment = inflater.inflate(R.layout.fragment_account_info, container, false);
         Toolbar toolbar = fragment.findViewById(R.id.toolbar);
@@ -72,7 +79,10 @@ public class AccountInfoFragment extends Fragment {
         toolbar.setNavigationOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                getFragmentManager().popBackStack();
+                FragmentManager fm = getFragmentManager();
+                if (fm != null) {
+                    fm.popBackStack();
+                }
             }
         });
         return fragment;
@@ -120,7 +130,7 @@ public class AccountInfoFragment extends Fragment {
             }
             final SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(activity);
 
-            final Switch readrcpt = (Switch) activity.findViewById(R.id.switchReadReceipts);
+            final Switch readrcpt = activity.findViewById(R.id.switchReadReceipts);
             readrcpt.setChecked(pref.getBoolean(UiUtils.PREF_READ_RCPT, true));
             readrcpt.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
                 @Override
@@ -129,7 +139,7 @@ public class AccountInfoFragment extends Fragment {
                 }
             });
 
-            final Switch typing = (Switch) activity.findViewById(R.id.switchTypingNotifications);
+            final Switch typing = activity.findViewById(R.id.switchTypingNotifications);
             typing.setChecked(pref.getBoolean(UiUtils.PREF_TYPING_NOTIF, true));
             typing.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
                 @Override
@@ -177,7 +187,7 @@ public class AccountInfoFragment extends Fragment {
                 }
             });
 
-            final TextView auth = (TextView) activity.findViewById(R.id.authPermissions);
+            final TextView auth = activity.findViewById(R.id.authPermissions);
             auth.setText(me.getAuthAcsStr());
             auth.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -185,7 +195,7 @@ public class AccountInfoFragment extends Fragment {
 
                 }
             });
-            final TextView anon = (TextView) activity.findViewById(R.id.anonPermissions);
+            final TextView anon = activity.findViewById(R.id.anonPermissions);
             anon.setText(me.getAnonAcsStr());
             anon.setOnClickListener(new View.OnClickListener() {
                 @Override
@@ -202,6 +212,9 @@ public class AccountInfoFragment extends Fragment {
         VxCard pub = me.getPub();
         final String title = pub == null ? null : pub.fn;
         final Activity activity = getActivity();
+        if (activity == null) {
+            return;
+        }
 
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         final View editor = LayoutInflater.from(builder.getContext()).inflate(R.layout.dialog_edit_account, null);
@@ -214,7 +227,7 @@ public class AccountInfoFragment extends Fragment {
                 .setPositiveButton(android.R.string.ok, new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        UiUtils.updateTitle(getActivity(), (Topic) me, titleEditor.getText().toString(), null);
+                        UiUtils.updateTitle(getActivity(), me, titleEditor.getText().toString(), null);
                     }
                 })
                 .setNegativeButton(android.R.string.cancel, null)
@@ -239,6 +252,9 @@ public class AccountInfoFragment extends Fragment {
 
     private void logout() {
         final Activity activity = getActivity();
+        if (activity == null) {
+            return;
+        }
         final AlertDialog.Builder builder = new AlertDialog.Builder(activity);
         builder.setNegativeButton(android.R.string.cancel, null)
                 .setMessage(R.string.confirm_logout)

@@ -20,6 +20,7 @@
             android:layout_height="wrap_content"
             android:maxWidth="200dp"
             style="@style/textMetaBubble"
+            android:textColor="@color/colorTextSecondary"
             tools:text="Lorem ipsum"/>
 
     </LinearLayout>

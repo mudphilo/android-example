@@ -7,9 +7,11 @@ import android.util.Log;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 
 import co.tinode.tinodesdk.Storage;
 import co.tinode.tinodesdk.Tinode;
@@ -94,7 +96,7 @@ class SqlStore implements Storage {
             try {
                 db.beginTransaction();
 
-                MessageDb.delete(db, st.id, -1,0, -1, false);
+                MessageDb.delete(db, st.id, 0, -1);
                 SubscriberDb.deleteForTopic(db, st.id);
                 TopicDb.delete(db, st.id);
 
@@ -199,16 +201,28 @@ class SqlStore implements Storage {
 
     @Override
     public long msgReceived(Topic topic, Subscription sub, MsgServerData m) {
-        StoredSubscription ss = (StoredSubscription) sub.getLocal();
+        SQLiteDatabase db = mDbh.getWritableDatabase();
+        long topicId, userId;
+        StoredSubscription ss = sub != null ? (StoredSubscription) sub.getLocal() : null;
         if (ss == null) {
-           return -1;
+            Log.d(TAG, "Message from an unknown subscriber " + m.from);
+            StoredTopic st = (StoredTopic) topic.getLocal();
+            topicId = st.id;
+            userId = UserDb.getId(db, m.from);
+        } else {
+            topicId = ss.topicId;
+            userId = ss.userId;
+        }
+
+        if (topicId < 0 || userId < 0) {
+            Log.d(TAG, "Failed to save message, topicId=" + topicId + ", userId=" + userId);
+            return -1;
         }
 
         StoredMessage msg = new StoredMessage(m);
-        msg.topicId = ss.topicId;
-        msg.userId = ss.userId;
+        msg.topicId = topicId;
+        msg.userId = userId;
 
-        SQLiteDatabase db = mDbh.getWritableDatabase();
         try {
             db.beginTransaction();
 
@@ -227,8 +241,7 @@ class SqlStore implements Storage {
         return msg.id;
     }
 
-    @Override
-    public long msgSend(Topic topic, Drafty data) {
+    private long insertMessage(Topic topic, Drafty data, int initialStatus) {
         StoredMessage msg = new StoredMessage();
         SQLiteDatabase db = mDbh.getWritableDatabase();
 
@@ -238,6 +251,7 @@ class SqlStore implements Storage {
         // Set seq to zero. MessageDb will assign a unique temporary (nagative int) seq.
         // The temp seq will be updated later, when the message is received by the server.
         msg.seq = 0;
+        msg.status = initialStatus;
         msg.content = data;
 
         msg.topicId = StoredTopic.getId(topic);
@@ -250,6 +264,30 @@ class SqlStore implements Storage {
     }
 
     @Override
+    public long msgSend(Topic topic, Drafty data) {
+        return insertMessage(topic, data, BaseDb.STATUS_UNDEFINED);
+    }
+
+    @Override
+    public long msgDraft(Topic topic, Drafty data) {
+        return insertMessage(topic, data, BaseDb.STATUS_DRAFT);
+    }
+
+    @Override
+    public boolean msgDraftUpdate(Topic topic, long messageDbId, Drafty data) {
+        return MessageDb.updateStatusAndContent(mDbh.getWritableDatabase(), messageDbId, BaseDb.STATUS_UNDEFINED, data);
+    }
+
+    @Override
+    public boolean msgReady(Topic topic, long messageDbId, Drafty data) {
+        return MessageDb.updateStatusAndContent(mDbh.getWritableDatabase(), messageDbId, BaseDb.STATUS_QUEUED, data);
+    }
+
+    public boolean msgDiscard(Topic topic, long messageDbId) {
+        return MessageDb.delete(mDbh.getWritableDatabase(), messageDbId);
+    }
+
+    @Override
     public boolean msgDelivered(Topic topic, long messageDbId, Date timestamp, int seq) {
         SQLiteDatabase db = mDbh.getWritableDatabase();
         boolean result = false;
@@ -259,10 +297,11 @@ class SqlStore implements Storage {
             if (MessageDb.delivered(mDbh.getWritableDatabase(), messageDbId, timestamp, seq) &&
                     TopicDb.msgReceived(db, topic, timestamp, seq)) {
                 db.setTransactionSuccessful();
+                Log.d(TAG, "msgDelivered -- SUCCESS");
                 result = true;
             }
         } catch (SQLException ex) {
-            Log.d(TAG, "Exception while inserting message", ex);
+            Log.d(TAG, "Exception while updating message", ex);
         } finally {
             db.endTransaction();
         }
@@ -270,15 +309,15 @@ class SqlStore implements Storage {
     }
 
     @Override
-    public boolean msgMarkToDelete(Topic topic, int fromId, int toId) {
+    public boolean msgMarkToDelete(Topic topic, int fromId, int toId, boolean markAsHard) {
         StoredTopic st = (StoredTopic) topic.getLocal();
-        return MessageDb.delete(mDbh.getWritableDatabase(), st.id, -1, fromId, toId, true);
+        return MessageDb.markDeleted(mDbh.getWritableDatabase(), st.id, fromId, toId, markAsHard);
     }
 
     @Override
-    public boolean msgMarkToDelete(Topic topic, int[] list) {
+    public boolean msgMarkToDelete(Topic topic, List<Integer> list, boolean markAsHard) {
         StoredTopic st = (StoredTopic) topic.getLocal();
-        return MessageDb.delete(mDbh.getWritableDatabase(), st.id, -1, list, true);
+        return MessageDb.markDeleted(mDbh.getWritableDatabase(), st.id, list, markAsHard);
     }
 
     @Override
@@ -290,7 +329,7 @@ class SqlStore implements Storage {
             db.beginTransaction();
 
             if (TopicDb.msgDeleted(db, topic, delId) &&
-                MessageDb.delete(mDbh.getWritableDatabase(), st.id, delId, fromId, toId, false)) {
+                    MessageDb.delete(mDbh.getWritableDatabase(), st.id, fromId, toId)) {
                 db.setTransactionSuccessful();
                 result = true;
             }
@@ -304,7 +343,7 @@ class SqlStore implements Storage {
     }
 
     @Override
-    public boolean msgDelete(Topic topic, int delId, int[] list) {
+    public boolean msgDelete(Topic topic, int delId, List<Integer> list) {
         SQLiteDatabase db = mDbh.getWritableDatabase();
         StoredTopic st = (StoredTopic) topic.getLocal();
         boolean result = false;
@@ -312,7 +351,7 @@ class SqlStore implements Storage {
             db.beginTransaction();
 
             if (TopicDb.msgDeleted(db, topic, delId) &&
-                    MessageDb.delete(mDbh.getWritableDatabase(), st.id, delId, list, false)) {
+                    MessageDb.delete(mDbh.getWritableDatabase(), st.id, list)) {
                 db.setTransactionSuccessful();
                 result = true;
             }
@@ -344,9 +383,20 @@ class SqlStore implements Storage {
         return result;
     }
 
+    @Override
+    public <T extends Storage.Message> T getMessageById(Topic topic, long dbMessageId) {
+        Storage.Message msg = null;
+        Cursor c = MessageDb.getMessageById(mDbh.getReadableDatabase(), dbMessageId);
+        if (c != null && c.moveToFirst()) {
+            msg = StoredMessage.readMessage(c);
+            c.close();
+        }
+        return (T) msg;
+    }
+
     @SuppressWarnings("unchecked")
     @Override
-    public <R extends Iterator<Message> & Closeable> R getUnsentMessages(Topic topic) {
+    public <R extends Iterator<Message> & Closeable> R getQueuedMessages(Topic topic) {
         MessageList list = null;
         StoredTopic st = (StoredTopic)topic.getLocal();
         if (st != null && st.id > 0) {
@@ -358,6 +408,24 @@ class SqlStore implements Storage {
         return (R) list;
     }
 
+    @Override
+    public List<Integer> getQueuedMessageDeletes(Topic topic, boolean hard) {
+        StoredTopic st = (StoredTopic)topic.getLocal();
+        List<Integer> list = null;
+        if (st != null && st.id > 0) {
+            Cursor c = MessageDb.queryDeleted(mDbh.getReadableDatabase(), st.id, hard);
+            if (c != null && c.moveToFirst()) {
+                list = new ArrayList<>(c.getCount());
+                int i = 0;
+                do {
+                    list.add(StoredMessage.readSeqId(c));
+                } while(c.moveToNext());
+                c.close();
+            }
+        }
+        return list;
+    }
+
     private static class MessageList implements Iterator<Message>, Closeable {
         private Cursor mCursor;
 
@@ -367,7 +435,7 @@ class SqlStore implements Storage {
         }
 
         @Override
-        public void close() throws IOException {
+        public void close() {
             mCursor.close();
         }
 

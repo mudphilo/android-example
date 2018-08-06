@@ -18,16 +18,21 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
     public long userId;
     public int status;
 
-    public StoredMessage() {
+    StoredMessage() {
     }
 
-    public StoredMessage(MsgServerData m) {
+    StoredMessage(MsgServerData m) {
         topic = m.topic;
         head = m.head;
         from = m.from;
         ts = m.ts;
         seq = m.seq;
         content = m.content;
+    }
+
+    public StoredMessage(MsgServerData m, int status) {
+        this(m);
+        this.status = status;
     }
 
     public static StoredMessage readMessage(Cursor c) {
@@ -38,11 +43,15 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
         msg.userId = c.getLong(MessageDb.COLUMN_IDX_USER_ID);
         msg.status = c.getInt(MessageDb.COLUMN_IDX_STATUS);
         msg.from = c.getString(MessageDb.COLUMN_IDX_SENDER);
-        msg.seq = c.getInt(MessageDb.COLUMN_IDX_SEQ);
         msg.ts = new Date(c.getLong(MessageDb.COLUMN_IDX_TS));
-        msg.content = BaseDb.deserialize(c.getBlob(MessageDb.COLUMN_IDX_CONTENT));
+        msg.seq = c.getInt(MessageDb.COLUMN_IDX_SEQ);
+        msg.content = BaseDb.deserialize(c.getString(MessageDb.COLUMN_IDX_CONTENT));
 
         return msg;
+    }
+
+    public static int readSeqId(Cursor c) {
+        return c.getInt(0);
     }
 
     public boolean isMine() {
@@ -60,7 +69,32 @@ public class StoredMessage extends MsgServerData implements Storage.Message {
     }
 
     @Override
-    public Map<String, String> getHeader() {
-        return head;
+    public int getSeqId() {
+        return seq;
+    }
+
+    @Override
+    public boolean isDraft() {
+        return status == BaseDb.STATUS_DRAFT;
+    }
+
+    @Override
+    public boolean isReady() {
+        return status == BaseDb.STATUS_QUEUED;
+    }
+
+    @Override
+    public boolean isDeleted() {
+        return status == BaseDb.STATUS_DELETED_SOFT || status == BaseDb.STATUS_DELETED_HARD;
+    }
+
+    @Override
+    public boolean isDeleted(boolean hard) {
+        return hard ? status == BaseDb.STATUS_DELETED_HARD : status == BaseDb.STATUS_DELETED_SOFT;
+    }
+
+    @Override
+    public boolean isSynced() {
+        return status == BaseDb.STATUS_SYNCED;
     }
 }
