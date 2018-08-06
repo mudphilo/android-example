@@ -4,7 +4,6 @@ package co.tinode.tinodesdk.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.io.Serializable;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -16,34 +15,29 @@ import java.util.regex.Pattern;
 
 
 /**
- <p>Basic parser and formatter for very simple rich text. Mostly targeted at
- mobile use cases similar to Telegram and WhatsApp.</p>
+ Basic parser and formatter for very simple rich text. Mostly targeted at
+ mobile use cases similar to Telegram and WhatsApp.
 
- <p>Supports:</p>
- <ul>
- <li>*abc* &rarr; <b>abc</b></li>
- <li>_abc_ &rarr; <i>abc</i></li>
- <li>~abc~ &rarr; <span style="text-decoration:line-through">abc</span></li>
- <li>`abc` &rarr; <tt>abc</tt></li>
- </ul>
+ Supports:
+ *abc* -> <b>abc</b>
+ _abc_ -> <i>abc</i>
+ ~abc~ -> <del>abc</del>
+ `abc` -> <tt>abc</tt>
 
- <p>Nested formatting is supported, e.g. *abc _def_* &rarr; <b>abc <i>def</i></b></p>
+ Nested formatting is supported, e.g. *abc _def_* -> <b>abc <i>def</i></b>
 
- <p>URLs, @mentions, and #hashtags are extracted.</p>
+ URLs, @mentions, and #hashtags are extracted.
 
- <p>JSON data representation is similar to Draft.js raw formatting.</p>
+ JSON data representation is similar to Draft.js raw formatting.
 
- <p>Sample text:</p>
- <pre>
+ Text:
      this is *bold*, `code` and _italic_, ~strike~
      combined *bold and _italic_*
      an url: https://www.example.com/abc#fragment and another _www.tinode.co_
      this is a @mention and a #hashtag in a string
      second #hashtag
- </pre>
 
- <p>JSON representation of the sample text above:</p>
- <pre>
+ Sample JSON representation of the text above:
  {
     "txt":  "this is bold, code and italic, strike combined bold and italic an url: https://www.example.com/abc#fragment " +
             "and another www.tinode.co this is a @mention and a #hashtag in a string second #hashtag",
@@ -62,7 +56,6 @@ import java.util.regex.Pattern;
         { "tp":"HT", "data":{ "val":"hashtag" } }
     ]
  }
- </pre>
  */
 
 public class Drafty implements Serializable {
@@ -377,27 +370,6 @@ public class Drafty implements Serializable {
         return ent;
     }
 
-    /**
-     * Extract attachment references for use in message header.
-     *
-     * @return string array of attachment references or null if no attachments with references found.
-     */
-    @JsonIgnore
-    public String[] getEntReferences() {
-        if (ent == null) {
-            return null;
-        }
-
-        ArrayList<String> result = new ArrayList<>();
-        for (Entity anEnt : ent) {
-            Object ref = anEnt.data.get("ref");
-            if (ref != null) {
-                result.add((String) ref);
-            }
-        }
-        return result.size() > 0 ? result.toArray(new String[]{}) : null;
-    }
-
     @JsonIgnore
     public Entity getEntity(Style style) {
         if (ent != null) {
@@ -426,26 +398,6 @@ public class Drafty implements Serializable {
      * @param fname name of the file to suggest to the receiver
      */
     public Drafty insertImage(int at, String mime, byte[] bits, int width, int height, String fname) {
-        return insertImage(at, mime, bits, width, height, fname, null, 0);
-    }
-
-    /**
-     * Insert inline image
-     *
-     * @param at location to insert image at
-     * @param mime Content-type, such as 'image/jpeg'.
-     * @param bits Content as an array of bytes
-     * @param width image width in pixels
-     * @param height image height in pixels
-     * @param fname name of the file to suggest to the receiver.
-     * @param refurl Reference to full/extended image.
-     * @param size file size hint (in bytes) as reported by the client.
-     */
-    public Drafty insertImage(int at, String mime, byte[] bits, int width, int height, String fname, URL refurl, long size) {
-        if (bits == null && refurl == null) {
-            throw new IllegalArgumentException("Either image bits or reference URL must not be null.");
-        }
-
         if (txt == null || txt.length() < at + 1 || at < 0) {
             throw new IndexOutOfBoundsException("Invalid insertion position");
         }
@@ -463,64 +415,24 @@ public class Drafty implements Serializable {
         fmt[fmt.length - 1] = new Style(at, 1, ent.length - 1);
 
         Map<String,Object> data = new HashMap<>();
-        if (mime != null && !mime.equals("")) {
-            data.put("mime", mime);
-        }
-        if (bits != null) {
-            data.put("val", bits);
-        }
+        data.put("mime", mime);
+        data.put("val", bits);
         data.put("width", width);
         data.put("height", height);
-        if (fname != null && !fname.equals("")) {
-            data.put("name", fname);
-        }
-        if (refurl != null) {
-            data.put("ref", refurl.toString());
-        }
-        if (size > 0) {
-            data.put("size", size);
-        }
+        data.put("name", fname);
         ent[ent.length - 1] = new Entity("IM", data);
 
         return this;
     }
 
     /**
-     * Attach file to a drafty object in-band.
+     * Attach file to a drafty object.
      *
      * @param mime Content-type, such as 'text/plain'.
      * @param bits Content as an array of bytes.
      * @param fname Optional file name to suggest to the receiver.
      */
     public Drafty attachFile(String mime, byte[] bits, String fname) {
-        return attachFile(mime, bits, fname, null, bits.length);
-    }
-
-    /**
-     * Attach file to a drafty object as a reference.
-     *
-     * @param mime Content-type, such as 'text/plain'.
-     * @param fname Optional file name to suggest to the receiver
-     * @param refurl reference to content location. If URL is relative, assume current server.
-     * @param size size of the attachment (untrusted).
-     */
-    public Drafty attachFile(String mime, String fname, String refurl, long size) {
-        return attachFile(mime, null, fname, refurl, size);
-    }
-
-    /**
-     * Attach file to a drafty object.
-     *
-     * @param mime Content-type, such as 'text/plain'.
-     * @param fname Optional file name to suggest to the receiver.
-     * @param bits File content to include inline.
-     * @param refurl Reference to full/extended file content.
-     * @param size file size hint as reported by the client.
-     */
-    protected Drafty attachFile(String mime, byte[] bits, String fname, String refurl, long size) {
-        if (bits == null && refurl == null) {
-            throw new IllegalArgumentException("Either file bits or reference URL must not be null.");
-        }
 
         if (fmt == null) {
             fmt = new Style[1];
@@ -536,21 +448,9 @@ public class Drafty implements Serializable {
         fmt[fmt.length - 1] = new Style(-1, 1, ent.length - 1);
 
         Map<String,Object> data = new HashMap<>();
-        if (mime != null && !mime.equals("")) {
-            data.put("mime", mime);
-        }
-        if (bits != null) {
-            data.put("val", bits);
-        }
-        if (fname != null && !fname.equals("")) {
-            data.put("name", fname);
-        }
-        if (refurl != null) {
-            data.put("ref", refurl);
-        }
-        if (size > 0) {
-            data.put("size", size);
-        }
+        data.put("mime", mime);
+        data.put("val", bits);
+        data.put("name", fname);
         ent[ent.length - 1] = new Entity("EX", data);
 
         return this;

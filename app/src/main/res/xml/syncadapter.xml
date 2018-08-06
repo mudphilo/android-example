@@ -2,7 +2,7 @@
 <sync-adapter
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:contentAuthority="com.android.contacts"
-    android:accountType="co.tinode.account"
+    android:accountType="com.legitimate.AllySuperApp.account"
     android:supportsUploading="false"
     android:allowParallelSyncs="false"
     android:isAlwaysSyncable="true"

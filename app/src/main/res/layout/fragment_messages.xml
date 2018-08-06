@@ -4,7 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@drawable/message_view_bkg"
-    tools:context=".MessagesFragment">
+    tools:context="co.tinode.AllySuperApp.com.legitimate.AllySuperApp.MessagesFragment">
 
     <FrameLayout
         android:id="@+id/sendMessageFragment"

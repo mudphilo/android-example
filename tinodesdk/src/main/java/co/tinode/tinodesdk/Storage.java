@@ -4,7 +4,6 @@ import java.io.Closeable;
 import java.util.Collection;
 import java.util.Date;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 
 import co.tinode.tinodesdk.model.Drafty;
@@ -60,105 +59,41 @@ public interface Storage {
     /** Update existing user */
     boolean userUpdate(User user);
 
-    /**
-     * Message received from the server.
-     */
-    long msgReceived(Topic topic, Subscription sub, MsgServerData msg);
+    // Message received
+    <DP,DR,SP,SR> long msgReceived(Topic topic, Subscription sub, MsgServerData msg);
 
-    /**
-     * Save message to DB as queued or synced.
-     *
+    /** Message sent. Returns database ID of the message suitable for
+     * use in msgDelivered
      * @param topic topic which sent the message
      * @param data message data to save
      * @return database ID of the message suitable for use in
      *  {@link #msgDelivered(Topic topic, long id, Date timestamp, int seq)}
      */
     long msgSend(Topic topic, Drafty data);
-
-    /**
-     * Save message to database as a draft. Draft will not be sent to server until it status changes.
-     *
-     * @param topic topic which sent the message
-     * @param data message data to save
-     * @return database ID of the message suitable for use in
-     *  {@link #msgDelivered(Topic topic, long id, Date timestamp, int seq)}
-     */
-    long msgDraft(Topic topic, Drafty data);
-
-    /**
-     * Update message draft content without
-     *
-     * @param topic topic which sent the message
-     * @param dbMessageId database ID of the message.
-     * @param data updated content of the message. Must not be null.
-     * @return true on success, false otherwise
-     */
-    boolean msgDraftUpdate(Topic topic, long dbMessageId, Drafty data);
-
-    /**
-     * Message is ready to be sent to the server.
-     *
-     * @param topic topic which sent the message
-     * @param dbMessageId database ID of the message.
-     * @param data updated content of the message. If null only status is updated.
-     * @return true on success, false otherwise
-     */
-    boolean msgReady(Topic topic, long dbMessageId, Drafty data);
-
-    /**
-     * Delete message by database id.
-     */
-    boolean msgDiscard(Topic topic, long dbMessageId);
-
-    /**
-     * Message delivered to the server and received a real seq ID.
-     *
-     * @param topic topic which sent the message.
-     * @param dbMessageId database ID of the message.
-     * @param timestamp server timestamp.
-     * @param seq server-issued message seqId.
-     * @return true on success, false otherwise     *
-     */
-    boolean msgDelivered(Topic topic, long dbMessageId, Date timestamp, int seq);
+    /** Message delivered to the server and received a real seq ID */
+    boolean msgDelivered(Topic topic, long id, Date timestamp, int seq);
     /** Mark messages for deletion by range */
-    boolean msgMarkToDelete(Topic topic, int fromId, int toId, boolean markAsHard);
+    boolean msgMarkToDelete(Topic topic, int fromId, int toId);
     /** Mark messages for deletion by seq ID list */
-    boolean msgMarkToDelete(Topic topic, List<Integer> list, boolean markAsHard);
+    boolean msgMarkToDelete(Topic topic, int[] list);
     /** Delete messages */
     boolean msgDelete(Topic topic, int delId, int fromId, int toId);
     /** Delete messages */
-    boolean msgDelete(Topic topic, int delId, List<Integer> list);
+    boolean msgDelete(Topic topic, int delId, int[] list);
     /** Set recv value for a given subscriber */
     boolean msgRecvByRemote(Subscription sub, int recv);
     /** Set read value for a given subscriber */
     boolean msgReadByRemote(Subscription sub, int read);
-
-    /** Retrieve a single message by database id */
-    <T extends Message> T getMessageById(Topic topic, long dbMessageId);
-
     /** Get a list of unsent messages */
-    <T extends Iterator<Message> & Closeable> T getQueuedMessages(Topic topic);
-    /**
-     * Get a list of pending delete message seq Ids.
-     * @param topic topic where the messages were deleted.
-     * @param hard set to <b>true</b> to fetch hard-deleted messages, soft-deleted otherwise.
-     */
-    List<Integer> getQueuedMessageDeletes(Topic topic, boolean hard);
+    <T extends Iterator<Message> & Closeable> T getUnsentMessages(Topic topic);
 
     interface Message {
         /** Get current message payload */
         Object getContent();
-        /** Get current message unique ID (database ID) */
+        /** Get current message unique ID */
         long getId();
-
-        /** Get Tinode seq Id of the message (different from database ID */
-        int getSeqId();
-
-        boolean isDraft();
-        boolean isReady();
-        boolean isDeleted();
-        boolean isDeleted(boolean hard);
-        boolean isSynced();
+        /** Get current message header */
+        Map<String,String> getHeader();
     }
 
     /**

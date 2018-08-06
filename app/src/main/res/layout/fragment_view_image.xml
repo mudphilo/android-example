@@ -12,6 +12,6 @@
         android:scaleType="fitCenter"
         android:adjustViewBounds="true"
         android:contentDescription=""
-        tools:src="@drawable/logo_src"/>
+        tools:src="@drawable/logo_src1"/>
 
 </RelativeLayout>
