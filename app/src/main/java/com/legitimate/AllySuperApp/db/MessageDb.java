@@ -2,13 +2,12 @@ package com.legitimate.AllySuperApp.db;
 
 import android.content.ContentValues;
 import android.content.Context;
-import android.content.CursorLoader;
 import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.net.Uri;
 import android.provider.BaseColumns;
-import android.support.v4.content.AsyncTaskLoader;
+import android.support.v4.content.CursorLoader;
 import android.text.TextUtils;
 import android.util.Log;
 
@@ -17,17 +16,6 @@ import java.util.Date;
 import java.util.List;
 
 import co.tinode.tinodesdk.Topic;
-
-/**
- * Storage structure for messages:
- * public String id -- not stored
- * public String topic -> as topic_id
- * public String from; -> as user_id
- * public Map head -- not stored yet
- * public Date ts;
- * public int seq;
- * public T content;
- */
 
 /**
  * Storage structure for messages:
@@ -227,7 +215,7 @@ public class MessageDb implements BaseColumns {
                 " ORDER BY " + COLUMN_NAME_TS +
                 (limit > 0 ? " LIMIT " + limit : "");
 
-        // Log.d(TAG, "Sql=[" + sql + "]");
+        Log.d(TAG, "Sql=[" + sql + "]");
 
         return db.rawQuery(sql, null);
     }
@@ -248,7 +236,7 @@ public class MessageDb implements BaseColumns {
                 " AND " + COLUMN_NAME_STATUS + "<=" + BaseDb.STATUS_VISIBLE +
                 " ORDER BY " + COLUMN_NAME_TS + " DESC LIMIT " + (pageCount * pageSize);
 
-        // Log.d(TAG, "Sql=[" + sql + "]");
+        Log.d(TAG, "Sql=[" + sql + "]");
 
         return db.rawQuery(sql, null);
     }
@@ -263,7 +251,7 @@ public class MessageDb implements BaseColumns {
     public static Cursor getMessageById(SQLiteDatabase db, long msgId) {
         String sql = "SELECT * FROM " + TABLE_NAME + " WHERE _id=" + msgId;
 
-        // Log.d(TAG, "Sql=[" + sql + "]");
+        Log.d(TAG, "Sql=[" + sql + "]");
 
         return db.rawQuery(sql, null);
     }
@@ -281,7 +269,7 @@ public class MessageDb implements BaseColumns {
                 COLUMN_NAME_TOPIC_ID + "=" + topicId +
                 " AND " + COLUMN_NAME_STATUS + "=" + BaseDb.STATUS_QUEUED +
                 " ORDER BY " + COLUMN_NAME_TS;
-        // Log.d(TAG, "Sql=[" + sql + "]");
+        Log.d(TAG, "Sql=[" + sql + "]");
 
         return db.rawQuery(sql, null);
     }
@@ -302,7 +290,7 @@ public class MessageDb implements BaseColumns {
                 " AND " + COLUMN_NAME_STATUS + "=" + status +
                 " ORDER BY " + COLUMN_NAME_TS;
 
-        // Log.d(TAG, "Sql=[" + sql + "]");
+        Log.d(TAG, "Sql=[" + sql + "]");
 
         return db.rawQuery(sql, null);
     }

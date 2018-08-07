@@ -17,8 +17,10 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import com.github.ybq.android.spinkit.style.DoubleBounce;
 import com.hbb20.CountryCodePicker;
 
 import com.legitimate.AllySuperApp.R;
@@ -40,7 +42,10 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
 
     CountryCodePicker msisdnField;
     EditText editTextCarrierNumber;
-    Button btn;
+    Button signIn;
+    ProgressBar progressBar;
+    String oText;
+    Boolean isLoading = false;
 
     public SignUpFragment() {
     }
@@ -57,13 +62,20 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
 
         View fragment = inflater.inflate(R.layout.activity_sign_up, container, false);
 
-        fragment.findViewById(R.id.join).setOnClickListener(this);
+        fragment.findViewById(R.id.signUp).setOnClickListener(this);
 
         editTextCarrierNumber = (EditText) fragment.findViewById(R.id.editText_carrierNumber);
         msisdnField = (CountryCodePicker) fragment.findViewById(R.id.msisdn);
         msisdnField.registerCarrierNumberEditText(editTextCarrierNumber);
 
-        btn = (Button) fragment.findViewById(R.id.join);
+        signIn = (Button) fragment.findViewById(R.id.signIn);
+        progressBar = (ProgressBar) fragment.findViewById(R.id.loadingProgressBar);
+
+        DoubleBounce doubleBounce = new DoubleBounce();
+        doubleBounce.setBounds(0, 0, 100, 100);
+        doubleBounce.setColor(getResources().getColor(R.color.colorAccent));
+        progressBar.setIndeterminateDrawable(doubleBounce);
+        oText = signIn.getText().toString();
 
         return fragment;
     }
@@ -89,17 +101,36 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
      */
     public void onClick(View v) {
         switch (v.getId()) {
-            case R.id.join:
+            case R.id.signUp:
                 onSignUp();
                 break;
             default:
         }
     }
 
+    public void loading(){
+
+        signIn.setText(getText(R.string.loading_text));
+        progressBar.setIndeterminate(true);
+        progressBar.setVisibility(View.VISIBLE);
+        isLoading = true;
+    }
+
+    public void stopLoading(){
+
+        signIn.setText(oText);
+        progressBar.setIndeterminate(false);
+        progressBar.setVisibility(View.GONE);
+        isLoading = false;
+    }
+
     public void onSignUp() {
 
+        if(isLoading){
+            return;
+        }
+
         final LoginActivity parent = (LoginActivity) getActivity();
-        final String oText = btn.getText().toString();
 
         if(!msisdnField.isValidFullNumber()){
 
@@ -135,9 +166,7 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
             return;
         }
 
-        //final Button signUp = (Button) parent.findViewById(R.id.join);
-        //btn.setEnabled(false);
-        //signUp.setText(getText(R.id.loading_text));
+        loading();
 
         SharedPreferences sharedPref = getContext().getSharedPreferences("ASA", 0);
         SharedPreferences.Editor editor = sharedPref.edit();
@@ -153,14 +182,14 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
         final Tinode tinode = Cache.getTinode();
         try {
 
-            btn.setText(getText(R.string.loading_text));
-
             // This is called on the websocket thread.
             tinode.connect(hostName, tls)
                     .thenApply(
                             new PromisedReply.SuccessListener<ServerMessage>() {
                                 @Override
                                 public PromisedReply<ServerMessage> onSuccess(ServerMessage ignored_msg) throws Exception {
+
+                                    stopLoading();
                                     // Try to create a new account.
                                     Bitmap bmp = null;
                                     try {
@@ -185,8 +214,7 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
                                     // Flip back to login screen on success;
                                     parent.runOnUiThread(new Runnable() {
                                         public void run() {
-                                            btn.setEnabled(true);
-                                            //btn.setText(oText);;
+                                            stopLoading();
 
                                             Bundle authBundle = new Bundle();
                                             authBundle.putString("msisdn",msisdn);
@@ -214,17 +242,15 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
                             new PromisedReply.FailureListener<ServerMessage>() {
                                 @Override
                                 public PromisedReply<ServerMessage> onFailure(Exception err) throws Exception {
+                                    stopLoading();
                                     parent.reportError(err, R.string.error_new_account_failed);
-                                    //btn.setText(oText);
-                                    btn.setEnabled(true);
                                     return null;
                                 }
                             });
 
         } catch (Exception e) {
+            stopLoading();
             Log.e(TAG, "Something went wrong", e);
-            btn.setEnabled(true);
-            btn.setText(oText);;
         }
     }
     @Override
@@ -233,8 +259,4 @@ public class SignUpFragment extends Fragment implements View.OnClickListener {
             UiUtils.acceptAvatar(getActivity(), (ImageView) getActivity().findViewById(R.id.imageAvatar), data);
         }
     }
-
-
-
-
 }

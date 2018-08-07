@@ -268,12 +268,15 @@ public class SubscriberDb implements BaseColumns {
      * @return _id of the user
      */
     private static int getNextSenderIndex(SQLiteDatabase db, long topicId) {
-        return (int) db.compileStatement("SELECT count(*) FROM " + TABLE_NAME +
-                " WHERE " + COLUMN_NAME_TOPIC_ID + "=" + topicId).simpleQueryForLong() + 1;
+        String sql = "SELECT count(*) FROM " + TABLE_NAME +
+                " WHERE " + COLUMN_NAME_TOPIC_ID + "=" + topicId;
+        Log.d(TAG,sql);
+
+        return (int) db.compileStatement(sql).simpleQueryForLong() + 1;
     }
 
     protected static Cursor query(SQLiteDatabase db, long topicId) {
-        return db.rawQuery("SELECT " +
+        String sql ="SELECT " +
                 TABLE_NAME + "." + _ID + "," +
                 TABLE_NAME + "." + COLUMN_NAME_TOPIC_ID + "," +
                 TABLE_NAME + "." + COLUMN_NAME_USER_ID + "," +
@@ -297,7 +300,11 @@ public class SubscriberDb implements BaseColumns {
                 " ON " + COLUMN_NAME_USER_ID + "=" + UserDb.TABLE_NAME + "." + UserDb._ID +
                 " LEFT JOIN " + TopicDb.TABLE_NAME +
                 " ON " + COLUMN_NAME_TOPIC_ID + "=" + TopicDb.TABLE_NAME + "." + TopicDb._ID +
-                " WHERE " + COLUMN_NAME_TOPIC_ID + "=" + topicId, null);
+                " WHERE " + COLUMN_NAME_TOPIC_ID + "=" + topicId;
+
+        Log.d(TAG,sql);
+
+        return db.rawQuery(sql,null);
 
     }
 

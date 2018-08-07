@@ -57,10 +57,12 @@ public class BaseDb extends SQLiteOpenHelper {
     // Object is rejected by the server.
     public static final int STATUS_REJECTED = 6;
 
+    private Context context = null;
+
     /**
      * Schema version. Increment on schema changes.
      */
-    private static final int DATABASE_VERSION = 4;
+    private static final int DATABASE_VERSION = 10;
     /**
      * Filename for SQLite file.
      */
@@ -77,6 +79,7 @@ public class BaseDb extends SQLiteOpenHelper {
      */
     private BaseDb(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        this.context = context;
     }
 
     /**
@@ -216,12 +219,20 @@ public class BaseDb extends SQLiteOpenHelper {
         return mAcc != null ? mAcc.uid : null;
     }
 
+    public String getCC() {
+        return mAcc != null ? mAcc.cc : "KE";
+    }
+
     public void setUid(String uid) {
         if (uid == null) {
             mAcc = null;
         } else {
             if (mAcc == null) {
-                mAcc = AccountDb.addOrActivateAccount(sInstance.getReadableDatabase(), uid);
+                SharedPreferences sharedPref = this.context.getSharedPreferences("ASA", 0);
+
+                String cc = sharedPref.getString("CC","KE");
+
+                mAcc = AccountDb.addOrActivateAccount(sInstance.getReadableDatabase(), uid,cc);
             } else if (!mAcc.uid.equals(uid)) {
                 // It won't work if the account is switched on a live DB.
                 throw new IllegalStateException("Illegal account assignment");

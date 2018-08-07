@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.database.SQLException;
 import android.database.sqlite.SQLiteDatabase;
 import android.provider.BaseColumns;
+import android.util.Log;
 
 /**
  * List of Tinode accounts.
@@ -68,10 +69,13 @@ public class AccountDb implements BaseColumns {
             acc.uid = uid;
             acc.id = getByUid(db, uid);
             if (acc.id >= 0) {
-                db.execSQL("UPDATE " + TABLE_NAME +
+
+                String sql = "UPDATE " + TABLE_NAME +
                         " SET " + COLUMN_NAME_ACTIVE + "=1, " +
                         COLUMN_NAME_COUNTRY_CODE + "= " + countryCode +
-                        " WHERE " + _ID + "=" + acc.id);
+                        " WHERE " + _ID + "=" + acc.id;
+                Log.d("SQL",sql);
+                db.execSQL(sql);
             } else {
                 // Insert new account as active
                 ContentValues values = new ContentValues();

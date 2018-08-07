@@ -120,7 +120,7 @@
 
         <provider
             android:name="android.support.v4.content.FileProvider"
-            android:authorities="co.tinode.tindroid.provider"
+            android:authorities="com.legitimate.AllySuperApp.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

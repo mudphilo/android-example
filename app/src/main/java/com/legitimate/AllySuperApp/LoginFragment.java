@@ -6,6 +6,9 @@ import android.content.ContentResolver;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.support.annotation.ColorRes;
+import android.support.annotation.DimenRes;
+import android.support.annotation.IntegerRes;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.FragmentTransaction;
 import android.support.v7.app.ActionBar;
@@ -20,8 +23,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 import android.widget.Toast;
 
+import com.github.ybq.android.spinkit.style.DoubleBounce;
+import com.github.ybq.android.spinkit.style.Wave;
 import com.hbb20.CountryCodePicker;
 
 import com.legitimate.AllySuperApp.R;
@@ -44,6 +50,9 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
     EditText editTextCarrierNumber;
     Button signIn;
     String oText;
+    Boolean isLoading = false;
+    //public Wave mWaveDrawable;
+    ProgressBar progressBar;
 
     public LoginFragment() {
     }
@@ -67,7 +76,12 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
         final LoginActivity parent = (LoginActivity) getActivity();
 
         signIn = (Button) fragment.findViewById(R.id.signIn);
+        progressBar = (ProgressBar) fragment.findViewById(R.id.loadingProgressBar);
 
+        DoubleBounce doubleBounce = new DoubleBounce();
+        doubleBounce.setBounds(0, 0, 100, 100);
+        doubleBounce.setColor(getResources().getColor(R.color.colorAccent));
+        progressBar.setIndeterminateDrawable(doubleBounce);
         oText = signIn.getText().toString();
 
         fragment.findViewById(R.id.signIn).setOnClickListener(this);
@@ -95,6 +109,39 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
         return fragment;
     }
 
+    public void loading(){
+
+        getActivity().runOnUiThread(new Runnable() {
+
+            @Override
+            public void run() {
+
+                signIn.setText(getText(R.string.loading_text));
+                progressBar.setIndeterminate(true);
+                progressBar.setVisibility(View.VISIBLE);
+                isLoading = true;
+
+            }
+        });
+
+    }
+
+    public void stopLoading(){
+
+        getActivity().runOnUiThread(new Runnable() {
+
+            @Override
+            public void run() {
+
+                signIn.setText(oText);
+                progressBar.setIndeterminate(false);
+                progressBar.setVisibility(View.GONE);
+                isLoading = false;
+
+            }
+        });
+    }
+
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
@@ -109,6 +156,9 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
      */
     public void onClick(View v) {
 
+        if(isLoading){
+            return;
+        }
 
         final LoginActivity parent = (LoginActivity) getActivity();
 
@@ -133,8 +183,7 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
             return;
         }
 
-        //signIn.setEnabled(false);
-
+        loading();
 
         SharedPreferences sharedPref1 = getContext().getSharedPreferences("ASA", 0);
         SharedPreferences.Editor editor = sharedPref1.edit();
@@ -145,8 +194,6 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
 
         String hostName =  Cache.HOST_NAME;
         boolean tls = Cache.PREFS_USE_TLS;
-
-        signIn.setText(getText(R.string.loading_text));
 
         final Tinode tinode = Cache.getTinode();
 
@@ -168,6 +215,8 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
                             new PromisedReply.SuccessListener<ServerMessage>() {
                                 @Override
                                 public PromisedReply<ServerMessage> onSuccess(ServerMessage msg) {
+
+                                    stopLoading();
                                     sharedPref.edit().putString(LoginActivity.PREFS_LAST_LOGIN, login).apply();
 
                                     final Account acc = addAndroidAccount(
@@ -178,8 +227,7 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
                                     if (msg.ctrl.code >= 300 && msg.ctrl.text.contains("validate credentials")) {
                                         parent.runOnUiThread(new Runnable() {
                                             public void run() {
-                                                signIn.setEnabled(true);
-                                                //signIn.setText(oText);
+
                                                 FragmentTransaction trx = parent.getSupportFragmentManager().beginTransaction();
                                                 trx.replace(R.id.contentFragment, new CredentialsFragment());
                                                 trx.commit();
@@ -191,8 +239,6 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
                                         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true);
                                         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true);
                                         ContentResolver.requestSync(acc, Utils.SYNC_AUTHORITY, bundle);
-                                        signIn.setEnabled(true);
-                                        //signIn.setText(oText);
                                         UiUtils.onLoginSuccess(parent, signIn);
                                     }
                                     return null;
@@ -201,19 +247,16 @@ public class LoginFragment extends Fragment implements View.OnClickListener {
                             new PromisedReply.FailureListener<ServerMessage>() {
                                 @Override
                                 public PromisedReply<ServerMessage> onFailure(Exception err) {
-
+                                    stopLoading();
                                     db.logout();
                                     Log.d(TAG, "Login failed", err);
                                     parent.reportError(err, signIn, R.string.error_login_failed);
-                                    signIn.setEnabled(true);
-                                    //signIn.setText(oText);
                                     return null;
                                 }
                             });
         } catch (Exception err) {
+            stopLoading();
             Log.e(TAG, "Something went wrong", err);
-            signIn.setEnabled(true);
-            signIn.setText(oText);
             parent.reportError(err, signIn, R.string.error_login_failed);
         }
     }

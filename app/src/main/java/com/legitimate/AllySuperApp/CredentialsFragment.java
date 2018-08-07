@@ -19,7 +19,9 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ProgressBar;
 
+import com.github.ybq.android.spinkit.style.DoubleBounce;
 import com.legitimate.AllySuperApp.R;
 import com.legitimate.AllySuperApp.account.Utils;
 import co.tinode.tinodesdk.PromisedReply;
@@ -34,12 +36,14 @@ import co.tinode.tinodesdk.model.ServerMessage;
 public class CredentialsFragment extends Fragment implements View.OnClickListener{
     private static final String TAG = "CredentialsFragment";
 
-    Button confirm;
     String msisdn = null;
     String password = null;
     Activity context = null;
     LoginActivity parent = null;
-    String oText = "";
+    Button signIn;
+    String oText;
+    Boolean isLoading = false;
+    ProgressBar progressBar;
 
     public CredentialsFragment() {
     }
@@ -68,10 +72,17 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
         }
 
         View fragment = inflater.inflate(R.layout.fragment_validate, container, false);
-        fragment.findViewById(R.id.confirm).setOnClickListener(this);
+        fragment.findViewById(R.id.signUp).setOnClickListener(this);
 
-        confirm = (Button) fragment.findViewById(R.id.confirm);
-        oText = confirm.getText().toString();
+        signIn = (Button) fragment.findViewById(R.id.signUp);
+        progressBar = (ProgressBar) fragment.findViewById(R.id.loadingProgressBar);
+
+        DoubleBounce doubleBounce = new DoubleBounce();
+        doubleBounce.setBounds(0, 0, 100, 100);
+        doubleBounce.setColor(getResources().getColor(R.color.colorAccent));
+        progressBar.setIndeterminateDrawable(doubleBounce);
+        oText = signIn.getText().toString();
+
         parent = (LoginActivity) getActivity();
 
         return fragment;
@@ -80,15 +91,31 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
     @Override
     public void onActivityCreated(Bundle unused) {
         super.onActivityCreated(unused);
-
-        //Bundle args = this.getArguments();
-        //String method = args.getString("credential");
-        //TextView callToAction = getActivity().findViewById(R.id.call_to_validate);
-        //callToAction.setText(getString(R.string.validate_cred));
     }
+
+    public void loading(){
+
+        signIn.setText(getText(R.string.loading_text));
+        progressBar.setIndeterminate(true);
+        progressBar.setVisibility(View.VISIBLE);
+        isLoading = true;
+    }
+
+    public void stopLoading(){
+
+        signIn.setText(oText);
+        progressBar.setIndeterminate(false);
+        progressBar.setVisibility(View.GONE);
+        isLoading = false;
+    }
+
 
     @Override
     public void onClick(View view) {
+
+        if(isLoading){
+            return;
+        }
 
         final Tinode tinode = Cache.getTinode();
         final String token = tinode.getAuthToken();
@@ -114,6 +141,8 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
             return;
         }
 
+        loading();
+
         try {
 
             //Bundle args = this.getArguments();
@@ -122,27 +151,14 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
             Credential[] cred = new Credential[1];
             cred[0] = new Credential(method, null, code, null);
 
-            confirm.setEnabled(false);
-            confirm.setText(getText(R.string.loading_text));
-
             tinode.loginToken(token, cred).thenApply(
                 new PromisedReply.SuccessListener<ServerMessage>() {
                     @Override
                     public PromisedReply<ServerMessage> onSuccess(ServerMessage msg) {
 
+                        stopLoading();
+
                         Log.d("DEBUGTEST","at 4 success validated ");
-                        /**
-                        // Flip back to login screen on success;
-                        parent.runOnUiThread(new Runnable() {
-                                    public void run() {
-                                        confirm.setEnabled(true);
-                                        confirm.setText(oText);
-                                        FragmentTransaction trx = parent.getSupportFragmentManager().beginTransaction();
-                                        trx.replace(R.id.contentFragment, new LoginFragment());
-                                        trx.commit();
-                                    }
-                                });
-                        */
                         login();
                         return null;
                     }
@@ -153,17 +169,15 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
 
                         Log.d("DEBUGTEST","at 5 incorrect code ");
 
-                        confirm.setEnabled(true);
-                        confirm.setText(oText);
+                        stopLoading();
                         parent.reportError(err, R.string.failed_credential_confirmation);
                         return null;
                     }
                 });
 
         } catch (Exception e) {
+            stopLoading();
             Log.e(TAG, "Something went wrong", e);
-            confirm.setEnabled(true);
-            confirm.setText(oText);
         }
     }
 
@@ -190,10 +204,11 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
 
         final Tinode tinode = Cache.getTinode();
 
+        loading();
+
         try {
             Log.d(TAG, "CONNECTING to "+hostName);
             // This is called on the websocket thread.
-            confirm.setText(getText(R.string.loading_text));
             tinode.connect(hostName, tls)
                     .thenApply(
                             new PromisedReply.SuccessListener<ServerMessage>() {
@@ -211,13 +226,12 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
                                 public PromisedReply<ServerMessage> onSuccess(ServerMessage msg) {
                                     sharedPref.edit().putString(LoginActivity.PREFS_LAST_LOGIN, msisdn).apply();
 
+                                    stopLoading();
                                     final Account acc = addAndroidAccount(
                                             tinode.getMyId(),
                                             AuthScheme.basicInstance(msisdn, password).toString(),
                                             tinode.getAuthToken());
 
-                                    confirm.setText(oText);
-                                    confirm.setEnabled(true);
 
                                     if (msg.ctrl.code >= 300 && msg.ctrl.text.contains("validate credentials")) {
                                         //
@@ -235,16 +249,14 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
                             new PromisedReply.FailureListener<ServerMessage>() {
                                 @Override
                                 public PromisedReply<ServerMessage> onFailure(Exception err) {
-                                    confirm.setText(oText);
-                                    confirm.setEnabled(true);
+                                    stopLoading();
                                     Log.d(TAG, "Login failed", err);
                                     parent.reportError(err, null, R.string.error_login_failed);
                                     return null;
                                 }
                             });
         } catch (Exception err) {
-            confirm.setText(oText);
-            confirm.setEnabled(true);
+            stopLoading();
             Log.e(TAG, "Something went wrong", err);
             parent.reportError(err, null, R.string.error_login_failed);
 
@@ -256,17 +268,15 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
         // try to auto login
 
         final SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(parent);
-        final String oText = confirm.getText().toString();
         String hostName =  Cache.HOST_NAME;
         boolean tls = Cache.PREFS_USE_TLS;
 
         final Tinode tinode = Cache.getTinode();
         final String token = tinode.getAuthToken();
 
-        Log.d("DEBUGTEST","at 1 ");
         Log.d("DEBUGTEST","at 3 token "+token);
 
-        confirm.setText(getText(R.string.loading_text));
+        loading();
 
         try {
             Log.d(TAG, "CONNECTING to "+hostName);
@@ -353,27 +363,25 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
 
                                                                     Log.d("DEBUGTEST","at 5 incorrect code ");
 
-                                                                    confirm.setEnabled(true);
-                                                                    confirm.setText(oText);
+                                                                    stopLoading();
                                                                     parent.reportError(err, R.string.failed_credential_confirmation);
                                                                     return null;
                                                                 }
                                                             });
                                                 } catch (Exception e) {
+                                                    stopLoading();
                                                     Log.e(TAG, "Something went wrong", e);
-                                                    confirm.setText(oText);
-                                                    confirm.setEnabled(true);
+
                                                 }
                                             }
                                         });
                                     } else {
+                                        stopLoading();
                                         // Force immediate sync, otherwise Contacts tab may be unusable.
                                         Bundle bundle = new Bundle();
                                         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true);
                                         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true);
                                         ContentResolver.requestSync(acc, Utils.SYNC_AUTHORITY, bundle);
-                                        confirm.setText(oText);
-                                        confirm.setEnabled(true);
                                     }
                                     return null;
                                 }
@@ -382,8 +390,7 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
                                 @Override
                                 public PromisedReply<ServerMessage> onFailure(Exception err) {
 
-                                    confirm.setText(oText);
-                                    confirm.setEnabled(true);
+                                    stopLoading();
 
                                     Log.d(TAG, "Login failed", err);
                                     parent.reportError(err, R.string.error_login_failed);
@@ -392,9 +399,8 @@ public class CredentialsFragment extends Fragment implements View.OnClickListene
                                 }
                             });
         } catch (Exception err) {
+            stopLoading();
             Log.e(TAG, "Something went wrong", err);
-            confirm.setText(oText);
-            confirm.setEnabled(true);
             parent.reportError(err, R.string.error_login_failed);
         }
     }

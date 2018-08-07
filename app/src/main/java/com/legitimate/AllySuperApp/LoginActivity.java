@@ -267,21 +267,35 @@ public class LoginActivity extends AppCompatActivity {
     private void requestPermissions() {
         // Check the SDK version and whether the permission is already granted or not.	            // Result will be returned in onRequestPermissionsResult
         // Result will be returned in onRequestPermissionsResult
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {	        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            ArrayList<String> permissions = new ArrayList<>();	            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.GET_ACCOUNTS},
-                    PERMISSIONS_REQUEST_GET_ACCOUNTS);
-            if (!UiUtils.checkPermission(this, Manifest.permission.GET_ACCOUNTS)) {
-                permissions.add(Manifest.permission.GET_ACCOUNTS);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+
+                ArrayList<String> permissions = new ArrayList<>();
+
+                ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.GET_ACCOUNTS},
+                        PERMISSIONS_REQUEST_GET_ACCOUNTS);
+
+                if (!UiUtils.checkPermission(this, Manifest.permission.GET_ACCOUNTS)) {
+                    permissions.add(Manifest.permission.GET_ACCOUNTS);
+                }
+
+                if (!UiUtils.checkPermission(this, Manifest.permission.READ_CONTACTS)) {
+                    permissions.add(Manifest.permission.READ_CONTACTS);
+                }
+
+                if (!UiUtils.checkPermission(this, Manifest.permission.WRITE_CONTACTS)) {
+                    permissions.add(Manifest.permission.WRITE_CONTACTS);
+                }
+
+                if (permissions.size() > 0) {
+                    ActivityCompat.requestPermissions(this,
+                            permissions.toArray(new String[]{}), PERMISSIONS_REQUEST_ID);
+
+                }
+
             }
-            if (!UiUtils.checkPermission(this, Manifest.permission.READ_CONTACTS)) {
-                permissions.add(Manifest.permission.READ_CONTACTS);
-            }
-            if (!UiUtils.checkPermission(this, Manifest.permission.WRITE_CONTACTS)) {
-                permissions.add(Manifest.permission.WRITE_CONTACTS);
-            }
-            ActivityCompat.requestPermissions(this,
-                    permissions.toArray(new String[]{}), PERMISSIONS_REQUEST_ID);
-        }	        }
+        }
     }
 
     /**

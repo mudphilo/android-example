@@ -69,6 +69,7 @@ import co.tinode.tinodesdk.model.Subscription;
 /**
  * Handle display of a conversation
  */
+
 public class MessagesListAdapter
         extends RecyclerView.Adapter<MessagesListAdapter.ViewHolder>
         implements LoaderManager.LoaderCallbacks<Cursor> {
@@ -711,7 +712,7 @@ public class MessagesListAdapter
                 Intent intent = new Intent();
                 intent.setAction(android.content.Intent.ACTION_VIEW);
                 intent.setDataAndType(FileProvider.getUriForFile(mActivity,
-                        "co.tinode.tindroid.provider", file), mimeType);
+                        "com.legitimate.AllySuperApp.provider", file), mimeType);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 try {
                     mActivity.startActivity(intent);

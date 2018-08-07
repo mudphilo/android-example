@@ -4,6 +4,7 @@ import android.content.ContentValues;
 import android.database.Cursor;
 import android.database.sqlite.SQLiteDatabase;
 import android.provider.BaseColumns;
+import android.util.Log;
 
 import java.util.Date;
 
@@ -190,7 +191,7 @@ public class UserDb implements BaseColumns {
                         COLUMN_NAME_ACCOUNT_ID + "=" + BaseDb.getInstance().getAccountId() +
                         " AND " +
                         COLUMN_NAME_UID + "='" + uid + "'";
-        // Log.d(TAG, sql);
+        Log.d(TAG, sql);
         Cursor c = db.rawQuery(sql, null);
         if (c != null && c.getCount() > 0) {
             if (c.moveToFirst()) {
@@ -210,6 +211,7 @@ public class UserDb implements BaseColumns {
                         COLUMN_NAME_ACCOUNT_ID + "=" + BaseDb.getInstance().getAccountId() +
                         " AND " +
                         COLUMN_NAME_UID + "='" + uid + "'";
+        Log.d(TAG, sql);
         Cursor c = db.rawQuery(sql, null);
         if (c != null && c.getCount() > 0) {
             user = new User<>(uid);

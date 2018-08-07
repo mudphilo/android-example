@@ -160,17 +160,35 @@
                         android:layout_height="wrap_content" />
                 </android.support.design.widget.TextInputLayout>
 
-                <Button
-                    android:layout_width="match_parent"
-                    android:textSize="16sp"
-                    android:textAllCaps="false"
+                <LinearLayout
                     android:layout_marginTop="30dp"
                     android:layout_marginBottom="30dp"
-                    android:id="@+id/join"
-                    android:layout_height="wrap_content"
-                    android:textColor="@android:color/white"
-                    android:text="@string/create_account"
-                    android:background="@drawable/button_shape_default_rounded" />
+                    android:background="@android:color/black"
+                    android:orientation="horizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="50dp">
+
+                    <ProgressBar
+                        android:background="@android:color/black"
+                        android:layout_width="100dp"
+                        android:layout_height="50dp"
+                        android:id="@+id/loadingProgressBar"
+                        android:visibility="gone"
+                        android:layout_weight="2"/>
+
+                    <Button
+                        android:background="@android:color/black"
+                        android:textSize="16sp"
+                        android:textAllCaps="false"
+                        android:textColor="@android:color/white"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:text="@string/create_account"
+                        android:layout_weight="1"
+                        android:id="@+id/signUp"/>
+
+                </LinearLayout>
+
 
             </LinearLayout>
 

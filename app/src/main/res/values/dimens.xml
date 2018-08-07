@@ -15,4 +15,6 @@
     <dimen name="activity_default_margin">3dp</dimen>
     <dimen name="dialog_padding_left">12dip</dimen>
     <dimen name="dialog_padding_right">7dip</dimen>
+    <dimen name="mb_height_56">56dp</dimen>
+
 </resources>
